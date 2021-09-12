@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 const WSServer = require("./server");
 const WSClient = require("./client");
 

@@ -1,13 +1,18 @@
 {
   "name": "mcpews",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A library that supports MCPE Websocket Protocol",
   "main": "index.js",
   "bin": {
-    "mcpews": "./repl.js"
+    "mcpews": "./repl.js",
+    "mcpewsmitm": "./mitm.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/XeroAlpha/mcpews.git"
   },
   "keywords": [
     "minecraft",
@@ -16,6 +21,10 @@
   ],
   "author": "ProjectXero",
   "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/XeroAlpha/mcpews/issues"
+  },
+  "homepage": "https://github.com/XeroAlpha/mcpews",
   "dependencies": {
     "uuid": "^8.3.2",
     "ws": "^8.2.0"
