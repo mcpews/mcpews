@@ -8,7 +8,7 @@ function main(destAddress, sourcePort) {
     console.log(`Enter '/connect <ip address>:${sourcePort}' to establish a connection.`);
     console.log(`If connection established, mitm will connect to ${destAddress} and forward messages`);
     wss.on("client", session => {
-        let client = new WSClient(destAddress);
+        let client = new WSClient("ws://" + destAddress);
         console.log(`<- connected`);
         client.on("command", (requestId, commandLine) => {
             if (client.handleEncryptionHandshake(requestId, commandLine)) {

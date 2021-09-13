@@ -1,11 +1,16 @@
 const EventEmitter = require("events");
 const WebSocket = require("ws");
 const randomUUID = require("uuid").v4;
-const { ServerEncryption } = require("./encrypt");
+const { implementName, ServerEncryption } = require("./encrypt");
 
 class WSServer extends WebSocket.Server {
     constructor (port, processor) {
-        super({ port: port });
+        super({
+            port: port,
+            handleProtocols: protocols => {
+                return protocols.find(protocol => protocol == implementName);
+            }
+        });
         this.sessions = new Set();
         this.on("connection", onConn);
         if (processor) this.on("client", processor);
@@ -48,18 +53,25 @@ class Session extends EventEmitter {
     }
 
     enableEncryption (callback) {
-        let encryption = new ServerEncryption();
-        let keyExchangeParams = encryption.beginKeyExchange();
-        this.sendCommand([
-            "enableencryption",
-            JSON.stringify(keyExchangeParams.publicKey),
-            JSON.stringify(keyExchangeParams.salt)
-        ], res => {
-            encryption.completeKeyExchange(res.publicKey);
-            this.encryption = encryption;
-            if (callback) callback.call(this, this);
-            this.emit("encryptionEnabled", this);
-        });
+        if (this.exchangingKey || this.encryption) {
+            return false;
+        } else {
+            let encryption = new ServerEncryption();
+            let keyExchangeParams = encryption.beginKeyExchange();
+            this.exchangingKey = true;
+            this.sendCommand([
+                "enableencryption",
+                JSON.stringify(keyExchangeParams.publicKey),
+                JSON.stringify(keyExchangeParams.salt)
+            ], res => {
+                this.exchangingKey = false;
+                encryption.completeKeyExchange(res.publicKey);
+                this.encryption = encryption;
+                if (callback) callback.call(this, this);
+                this.emit("encryptionEnabled", this);
+            });
+            return true;
+        }
     }
 
     isEncrypted () {
