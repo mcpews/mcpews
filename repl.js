@@ -52,8 +52,8 @@ class SingleSessionServer extends EventEmitter {
         });
     }
 
-    disconnect () {
-        this.getSession().disconnect();
+    disconnect (forced) {
+        this.getSession().disconnect(forced);
     }
 
     disconnectAll () {
@@ -249,9 +249,23 @@ class CommandReplServer extends repl.REPLServer {
         });
         this.defineCommand("disconnect", {
             help: "Disconnect from all the clients",
-            action: () => {
+            action: arg => {
                 if (this.server.isOnline()) {
-                    this.server.disconnect();
+                    if (arg == "forced") {
+                        this.server.disconnect(true);
+                    } else {
+                        let disconnected = false;
+                        let timeout = setTimeout(() => {
+                            if (disconnected) return;
+                            this._printLine("Connection close request timeout.");
+                            this.server.disconnect(true);
+                        }, 10000);
+                        this.server.once("offline", () => {
+                            disconnected = true;
+                            clearTimeout(timeout);
+                        });
+                        this.server.disconnect(false);
+                    }
                 } else {
                     this._printLine("Connection is not established.");
                 }
