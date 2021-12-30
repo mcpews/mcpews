@@ -4,102 +4,106 @@ const randomUUID = require("uuid").v4;
 const { implementName, ServerEncryption } = require("./encrypt");
 
 class WSServer extends WebSocket.Server {
-    constructor (port, processor) {
+    constructor(port, handleClient) {
         super({
             port: port,
-            handleProtocols: protocols => {
-                return protocols.find(protocol => protocol == implementName);
+            handleProtocols: (protocols) => {
+                return protocols.find((protocol) => protocol == implementName);
             }
         });
         this.sessions = new Set();
-        this.on("connection", onConn);
-        if (processor) this.on("client", processor);
+        this.on("connection", onConnection);
+        if (handleClient) {
+            this.on("client", handleClient);
+        }
     }
 
-    broadcastCommand (command, callback) {
-        this.sessions.forEach(e => {
+    broadcastCommand(command, callback) {
+        this.sessions.forEach((e) => {
             e.sendCommand(command, callback);
         });
     }
 
-    broadcastSubscribe (event, callback) {
-        this.sessions.forEach(e => {
+    broadcastSubscribe(event, callback) {
+        this.sessions.forEach((e) => {
             e.subscribe(event, callback);
         });
     }
 
-    broadcastUnsubscribe (event, callback) {
-        this.sessions.forEach(e => {
+    broadcastUnsubscribe(event, callback) {
+        this.sessions.forEach((e) => {
             e.unsubscribe(event, callback);
         });
     }
 
-    disconnectAll (forced) {
-        this.sessions.forEach(e => {
-            e.disconnect(forced);
+    disconnectAll(force) {
+        this.sessions.forEach((e) => {
+            e.disconnect(force);
         });
     }
 }
 
 class Session extends EventEmitter {
-    constructor (server, socket) {
+    constructor(server, socket) {
         super();
         this.server = server;
         this.socket = socket;
         this.eventListeners = new Map();
         this.responsors = new Map();
-        socket.on("message", onMessage.bind(this))
-            .on("close", onClose.bind(this));
+        socket.on("message", onMessage.bind(this)).on("close", onClose.bind(this));
     }
 
-    enableEncryption (callback) {
+    enableEncryption(callback) {
         if (this.exchangingKey || this.encryption) {
             return false;
         } else {
             let encryption = new ServerEncryption();
             let keyExchangeParams = encryption.beginKeyExchange();
             this.exchangingKey = true;
-            this.sendCommand([
-                "enableencryption",
-                JSON.stringify(keyExchangeParams.publicKey),
-                JSON.stringify(keyExchangeParams.salt)
-            ], res => {
-                this.exchangingKey = false;
-                encryption.completeKeyExchange(res.publicKey);
-                this.encryption = encryption;
-                if (callback) callback.call(this, this);
-                this.emit("encryptionEnabled", this);
-            });
+            this.sendCommand(
+                [
+                    "enableencryption",
+                    JSON.stringify(keyExchangeParams.publicKey),
+                    JSON.stringify(keyExchangeParams.salt)
+                ],
+                (res) => {
+                    this.exchangingKey = false;
+                    encryption.completeKeyExchange(res.publicKey);
+                    this.encryption = encryption;
+                    if (callback) callback.call(this, this);
+                    this.emit("encryptionEnabled", this);
+                }
+            );
             return true;
         }
     }
 
-    isEncrypted () {
+    isEncrypted() {
         return this.encryption != null;
     }
 
-    sendJSON (json) {
+    sendMessage(message) {
+        let messageData = JSON.stringify(message);
         if (this.encryption) {
-            this.socket.send(this.encryption.encrypt(JSON.stringify(json)));
-        } else {
-            this.socket.send(JSON.stringify(json));
+            messageData = this.encryption.encrypt(messageData);
         }
+        this.socket.send(messageData);
     }
 
-    sendFrame (messagePurpose, body, uuid) {
-        this.sendJSON({
+    sendFrame(messagePurpose, body, uuid) {
+        this.sendMessage({
             header: buildHeader(messagePurpose, uuid),
             body: body
         });
     }
 
-    subscribeRaw (event) {
+    subscribeRaw(event) {
         this.sendFrame("subscribe", {
             eventName: event
         });
     }
 
-    subscribe (event, callback) {
+    subscribe(event, callback) {
         let listeners = this.eventListeners.get(event);
         if (listeners == undefined) {
             listeners = new Set();
@@ -109,13 +113,13 @@ class Session extends EventEmitter {
         listeners.add(callback);
     }
 
-    unsubscribeRaw (event) {
+    unsubscribeRaw(event) {
         this.sendFrame("unsubscribe", {
             eventName: event
         });
     }
 
-    unsubscribe (event, callback) {
+    unsubscribe(event, callback) {
         let listeners = this.eventListeners.get(event);
         if (listeners == undefined) {
             return;
@@ -127,42 +131,80 @@ class Session extends EventEmitter {
         }
     }
 
-    sendCommandRaw (requestId, command) {
-        this.sendFrame("commandRequest", {
-            version: 1,
-            commandLine: command,
-            origin: {
-                type: "player"
-            }
-        }, requestId);
+    publishEvent(event, body, message) {
+        let listeners = this.eventListeners.get(event);
+        if (listeners) {
+            const listenersCopy = new Set(listeners);
+            listenersCopy.forEach((e) => {
+                try {
+                    e.call(this, body, message, this);
+                } catch (err) {
+                    this.emit("error", err);
+                }
+            });
+        } else {
+            this.emit("event", event, body, message, this);
+        }
     }
 
-    sendCommand (command, callback) {
+    sendCommandRaw(requestId, command) {
+        this.sendFrame(
+            "commandRequest",
+            {
+                version: 1,
+                commandLine: command,
+                origin: {
+                    type: "player"
+                }
+            },
+            requestId
+        );
+    }
+
+    sendCommand(command, callback) {
         let requestId = randomUUID();
         this.responsors.set(requestId, callback);
         this.sendCommandRaw(requestId, Array.isArray(command) ? command.join(" ") : command);
         return requestId;
     }
 
-    sendCommandLegacyRaw (requestId, commandName, overload, input) {
-        this.sendFrame("commandRequest", {
-            version: 1,
-            name: commandName,
-            overload: overload,
-            input: input,
-            origin: { type: "player" }
-        }, requestId);
+    sendCommandLegacyRaw(requestId, commandName, overload, input) {
+        this.sendFrame(
+            "commandRequest",
+            {
+                version: 1,
+                name: commandName,
+                overload: overload,
+                input: input,
+                origin: { type: "player" }
+            },
+            requestId
+        );
     }
 
-    sendCommandLegacy (commandName, overload, input, callback) {
+    sendCommandLegacy(commandName, overload, input, callback) {
         let requestId = randomUUID();
         this.responsors.set(requestId, callback);
         this.sendCommandLegacyRaw(requestId, commandName, overload, input);
         return requestId;
     }
 
-    disconnect (forced) {
-        if (forced) {
+    respondCommand(requestId, body, message) {
+        let callback = this.responsors.get(requestId);
+        this.responsors.delete(requestId);
+        if (callback) {
+            try {
+                callback.call(this, body, message, this);
+            } catch (err) {
+                this.emit("error", err);
+            }
+        } else {
+            this.emit("commandResponse", requestId, body, message, this);
+        }
+    }
+
+    disconnect(force) {
+        if (force) {
             this.socket.close();
         } else {
             this.sendCommand("closewebsocket", null);
@@ -172,51 +214,30 @@ class Session extends EventEmitter {
 
 module.exports = WSServer;
 
-function onConn(socket, req) {
+function onConnection(socket, req) {
     let session = new Session(this, socket);
     this.sessions.add(session);
     this.emit("client", session, req);
 }
 
-function onMessage(message) {
-    if (this.encryption) message = this.encryption.decrypt(message);
-    let json = JSON.parse(Buffer.isBuffer(message) ? message.toString("utf8") : message);
-    let header = json.header, body = json.body;
+function onMessage(messageData) {
+    if (this.encryption) messageData = this.encryption.decrypt(messageData);
+    let message = JSON.parse(messageData);
+    let { header, body } = message;
     switch (header.messagePurpose) {
         case "event":
-            let listeners = this.eventListeners.get(body.eventName);
-            if (listeners) {
-                listeners.forEach(e => {
-                    try {
-                        e.call(this, body, json, this);
-                    } catch(err) {
-                        this.emit("error", err);
-                    }
-                });
-            } else {
-                this.emit("event", body.eventName, body, json, this);
-            }
+            this.publishEvent(body.eventName, body, message);
             break;
         case "commandResponse":
-            let callback = this.responsors.get(header.requestId);
-            this.responsors.delete(header.requestId);
-            if (callback) {
-                try {
-                    callback.call(this, body, json, this);
-                } catch(err) {
-                    this.emit("error", err);
-                }
-            } else {
-                this.emit("commandResponse", header.requestId, body, json, this);
-            }
+            this.respondCommand(header.requestId, body, message);
             break;
         case "error":
-            this.emit("mcError", body.statusCode, body.statusMessage, body.statusCode, json, this);
+            this.emit("mcError", body.statusCode, body.statusMessage, body, message, this);
             break;
         default:
-            this.emit("customFrame", header.messagePurpose, body, header, json, this);
+            this.emit("customFrame", header.messagePurpose, body, header, message, this);
     }
-    this.emit("message", json, this);
+    this.emit("message", message, this);
 }
 
 function onClose() {

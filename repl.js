@@ -52,8 +52,8 @@ class SingleSessionServer extends EventEmitter {
         });
     }
 
-    disconnect (forced) {
-        this.getSession().disconnect(forced);
+    disconnect (force) {
+        this.getSession().disconnect(force);
     }
 
     disconnectAll () {
@@ -251,7 +251,7 @@ class CommandReplServer extends repl.REPLServer {
             help: "Disconnect from all the clients",
             action: arg => {
                 if (this.server.isOnline()) {
-                    if (arg == "forced") {
+                    if (arg == "force") {
                         this.server.disconnect(true);
                     } else {
                         let disconnected = false;

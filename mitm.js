@@ -39,7 +39,7 @@ function main(destAddress, sourcePort) {
             console.log(`<- error: ${statusMessage}`);
         });
         session.on("event", (eventName, body) => {
-            client.emitEvent(eventName, body);
+            client.publishEvent(eventName, body);
             console.log(`<- event: ${eventName}`, body);
         });
         session.on("commandResponse", (requestId, body) => {

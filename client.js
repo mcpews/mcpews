@@ -1,17 +1,17 @@
 const EventEmitter = require("events");
-const WebSocket = require('ws');
+const WebSocket = require("ws");
 const { ClientEncryption } = require("./encrypt");
 
 class WSClient extends EventEmitter {
-    constructor (address) {
+    constructor(address) {
         super();
         this.socket = new WebSocket(address);
         this.eventListenMap = new Map();
         this.socket.on("message", onMessage.bind(this))
-            .on("close", onClose.bind(this));
+        this.socket.on("close", onClose.bind(this));
     }
 
-    handleEncryptionHandshake (requestId, commandLine) {
+    handleEncryptionHandshake(requestId, commandLine) {
         if (commandLine.startsWith("enableencryption ")) {
             let encryption = new ClientEncryption();
             let keyExchangeParams = encryption.beginKeyExchange();
@@ -28,84 +28,84 @@ class WSClient extends EventEmitter {
         return false;
     }
 
-    isEncrypted () {
+    isEncrypted() {
         return this.encryption != null;
     }
 
-    sendJSON (json) {
+    sendMessage(message) {
+        let messageData = JSON.stringify(message);
         if (this.encryption) {
-            this.socket.send(this.encryption.encrypt(JSON.stringify(json)));
-        } else {
-            this.socket.send(JSON.stringify(json));
+            messageData = this.encryption.encrypt(messageData);
         }
+        this.socket.send(messageData);
     }
 
-    sendFrame (messagePurpose, body, uuid) {
-        this.sendJSON({
+    sendFrame(messagePurpose, body, uuid) {
+        this.sendMessage({
             header: buildHeader(messagePurpose, uuid),
             body: body
         });
     }
 
-    sendError (statusCode, statusMessage) {
+    sendError(statusCode, statusMessage) {
         this.sendFrame("error", {
             statusCode,
             statusMessage
         });
     }
 
-    sendEvent (eventName, body) {
+    sendEvent(eventName, body) {
         this.sendFrame("event", {
             ...body,
             eventName
         });
     }
 
-    emitEvent (eventName, body) {
+    publishEvent(eventName, body) {
         let isEventListening = this.eventListenMap.get(eventName);
         if (isEventListening) {
             this.sendEvent(eventName, body);
         }
     }
 
-    respondCommand (requestId, body) {
+    respondCommand(requestId, body) {
         this.sendFrame("commandResponse", body, requestId);
     }
 
-    disconnect () {
+    disconnect() {
         this.socket.close();
     }
 }
 
 module.exports = WSClient;
 
-function onMessage(message) {
-    if (this.encryption) message = this.encryption.decrypt(message);
-    let json = JSON.parse(Buffer.isBuffer(message) ? message.toString("utf8") : message);
-    let header = json.header, body = json.body;
+function onMessage(messageData) {
+    if (this.encryption) messageData = this.encryption.decrypt(messageData);
+    let message = JSON.parse(messageData);
+    let { header, body } = message;
     switch (header.messagePurpose) {
         case "subscribe":
         case "unsubscribe":
             let isEventListening = this.eventListenMap.get(body.eventName);
             if (header.messagePurpose == "subscribe" && !isEventListening) {
-                this.emit("subscribe", body.eventName, body, json, this);
+                this.emit("subscribe", body.eventName, body, message, this);
                 this.eventListenMap.set(body.eventName, true);
             } else if (header.messagePurpose == "unsubscribe" && isEventListening) {
-                this.emit("unsubscribe", body.eventName, body, json, this);
+                this.emit("unsubscribe", body.eventName, body, message, this);
                 this.eventListenMap.set(body.eventName, false);
             }
             break;
         case "commandRequest":
             if (body.commandLine) {
-                this.emit("command", header.requestId, body.commandLine, body, json, this);
+                this.emit("command", header.requestId, body.commandLine, body, message, this);
             } else {
-                this.emit("commandLegacy", header.requestId, body.name, body.overload, body.input, body, json, this);
+                this.emit("commandLegacy", header.requestId, body.name, body.overload, body.input, body, message, this);
             }
             break;
         default:
-            this.emit("customFrame", header.messagePurpose, body, header.requestId, json, this);
+            this.emit("customFrame", header.messagePurpose, body, header.requestId, message, this);
     }
-    this.emit("message", json, this);
+    this.emit("message", message, this);
 }
 
 function onClose() {
