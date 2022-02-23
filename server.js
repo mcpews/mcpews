@@ -3,6 +3,8 @@ const WebSocket = require("ws");
 const randomUUID = require("uuid").v4;
 const { implementName, ServerEncryption } = require("./encrypt");
 
+const kSecWebsocketKey = Symbol("sec-websocket-key");
+
 class WSServer extends WebSocket.Server {
     constructor(port, handleClient) {
         super({
@@ -16,6 +18,24 @@ class WSServer extends WebSocket.Server {
         if (handleClient) {
             this.on("client", handleClient);
         }
+    }
+
+    // overwrite handleUpgrade to skip sec-websocket-key format test
+    handleUpgrade(req, socket, head, cb) {
+        const key = req.headers["sec-websocket-key"];
+        if (key && /^[+/0-9A-Za-z]{11}=$/.test(key)) {
+            req.headers["sec-websocket-key"] = "skipkeytest" + key + "=";
+            req[kSecWebsocketKey] = key;
+        }
+        super.handleUpgrade(req, socket, head, cb);
+    }
+
+    // same reason as above
+    completeUpgrade(extensions, key, protocols, req, socket, head, cb) {
+        if (req[kSecWebsocketKey]) {
+            key = req[kSecWebsocketKey];
+        }
+        super.completeUpgrade(extensions, key, protocols, req, socket, head, cb);
     }
 
     broadcastCommand(command, callback) {

@@ -1,6 +1,6 @@
 {
   "name": "mcpews",
-  "version": "1.1.1",
+  "version": "2.1.0",
   "description": "A library that supports MCPE Websocket Protocol",
   "main": "index.js",
   "bin": {
