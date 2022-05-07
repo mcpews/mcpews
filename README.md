@@ -6,7 +6,7 @@ A library that supports MCPE Websocket Protocol.
 
 Server-side:
 ```javascript
-const { WSServer }  = require("mcpews");
+const { WSServer, Version }  = require("mcpews");
 const server = new WSServer(19134); // port
 
 server.on("client", session => {
@@ -16,18 +16,26 @@ server.on("client", session => {
     session.sendCommand("say Connected!");
 
     // execute a command and receive the response
-    session.sendCommand("list", res => {
-        console.log("currentPlayerCount = " + res.currentPlayerCount);
+    session.sendCommand("list", ({ body }) => {
+        console.log("currentPlayerCount = " + body.currentPlayerCount);
     });
 
     // subscribe a event
-    session.subscribe("PlayerMessage", event => {
+    session.subscribe("PlayerMessage", (event) => {
         // when event triggered
-        const { properties } = event;
-        if (properties.Message == "close") {
+        const { body, version } = event;
+        let message, messageType;
+        if (version === Version.V2) {
+            message = body.message;
+            messageType = body.type;
+        } else {
+            message = body.properties.Message;
+            messageType = body.properties.MessageType;
+        }
+        if (message === "close") {
             // disconnect from the game
             session.disconnect();
-        } else if (properties.MessageType == "chat") {
+        } else if (messageType === "chat") {
             session.sendCommand("say You just said " + properties.Message);
         }
     });
@@ -49,17 +57,45 @@ process.stdin.on("data", buffer => {
     });
 });
 
-client.on("command", (requestId, commandLine) => {
+client.on("command", (event) => {
+    const { requestId, commandLine } = event;
+
     // pass encryption handshake to client itself
-    if (client.handleEncryptionHandshake(requestId, commandLine)) return;
+    if (event.handleEncryptionHandshake()) return;
 
     // command received
     console.log("command: " + commandLine);
 
-    // respond the command, must called after handling
-    client.respondCommand(requestId, {
+    // respond the command, must be called after handling
+    event.respondCommand({
         length: commandLine.length
     });
+});
+```
+
+WSApp, optimized for async/await:
+```javascript
+const { WSApp } = require("mcpews");
+
+const app = new WSApp(19134);
+app.on("session", async (session) => {
+    const playerNames = (await session.command("testfor @a")).body.victim;
+    const names = await Promise.all(playerNames.map(async (playerName) => {
+        await session.command(`tell ${playerName} What's your name?`);
+        try {
+            const name = (await session.waitForEvent(
+                "PlayerMessage",
+                30000,
+                (ev) => ev.body.sender === playerName
+            )).body.message;
+            await session.command(`tell ${playerName} Your name is ${name}`);
+            return name;
+        } catch (err) {
+            return playerName;
+        }
+    }));
+    console.log(names);
+    session.disconnect();
 });
 ```
 

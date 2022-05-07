@@ -1,14 +1,15 @@
 {
   "name": "mcpews",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "A library that supports MCPE Websocket Protocol",
-  "main": "index.js",
+  "main": "lib/index.js",
   "bin": {
-    "mcpews": "./repl.js",
-    "mcpewsmitm": "./mitm.js"
+    "mcpews": "./lib/repl.js",
+    "mcpewsmitm": "./lib/mitm.js"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint --fix ."
   },
   "repository": {
     "type": "git",
@@ -27,6 +28,11 @@
   "homepage": "https://github.com/XeroAlpha/mcpews",
   "dependencies": {
     "uuid": "^8.3.2",
-    "ws": "^8.2.0"
+    "ws": "^8.6.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.26.0"
   }
 }
