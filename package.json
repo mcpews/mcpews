@@ -1,11 +1,11 @@
 {
   "name": "mcpews",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "A library that supports MCPE Websocket Protocol",
   "main": "lib/index.js",
   "bin": {
-    "mcpews": "./lib/repl.js",
-    "mcpewsmitm": "./lib/mitm.js"
+    "mcpews": "./src/repl.js",
+    "mcpewsmitm": "./src/mitm.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",

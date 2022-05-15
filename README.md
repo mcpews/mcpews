@@ -36,7 +36,7 @@ server.on("client", session => {
             // disconnect from the game
             session.disconnect();
         } else if (messageType === "chat") {
-            session.sendCommand("say You just said " + properties.Message);
+            session.sendCommand("say You just said " + message);
         }
     });
 

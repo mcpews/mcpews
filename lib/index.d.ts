@@ -12,6 +12,21 @@ declare class Encryption {
     decrypt(buf: Buffer): string;
 }
 
+export class ServerEncryption extends Encryption {
+    beginKeyExchange(): {
+        publicKey: string;
+        salt: string;
+    };
+    completeKeyExchange(clientPublicKey: string): void;
+}
+
+export class ClientEncryption extends Encryption {
+    beginKeyExchange(): {
+        publicKey: string;
+    };
+    completeKeyExchange(serverPublicKey: string, salt: string): void;
+}
+
 declare class TypedEventEmitter<EventMap> {
     on<E extends keyof EventMap>(event: E, listener: EventMap[E]): this;
     once<E extends keyof EventMap>(event: E, listener: EventMap[E]): this;
