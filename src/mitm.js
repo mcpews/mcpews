@@ -51,8 +51,8 @@ function main(destAddress, sourcePort) {
             console.log(`-> [${clientNo}] disconnected from client`);
             session.disconnect(true);
         });
-        session.on("mcError", ({ statusCode, statusMessage }) => {
-            client.sendError(statusCode, statusMessage);
+        session.on("mcError", ({ requestId, statusCode, statusMessage }) => {
+            client.sendError(statusCode, statusMessage, requestId);
             console.log(`<- [${clientNo}] error: ${statusMessage}`);
         });
         session.on("event", ({ purpose, eventName, body }) => {

@@ -27,19 +27,32 @@ export class ClientEncryption extends Encryption {
     completeKeyExchange(serverPublicKey: string, salt: string): void;
 }
 
-declare class TypedEventEmitter<EventMap> {
+declare class TypedEventEmitter<EventMap extends { [key in keyof EventMap]: (...args: any) => any }> {
     on<E extends keyof EventMap>(event: E, listener: EventMap[E]): this;
     once<E extends keyof EventMap>(event: E, listener: EventMap[E]): this;
     off<E extends keyof EventMap>(event: E, listener: EventMap[E]): this;
-    addListener(eventName: string | symbol, listener: (...args: any[]) => void): this;
+    addListener<E extends keyof EventMap>(event: E, listener: EventMap[E]): this;
     removeListener<E extends keyof EventMap>(event: E, listener: EventMap[E]): this;
     removeAllListeners<E extends keyof EventMap>(event: E): this;
     listeners<E extends keyof EventMap>(event: E): EventMap[E][];
     rawListeners<E extends keyof EventMap>(event: E): EventMap[E][];
-    emit<E extends keyof EventMap>(event: E, ...args: any[]): boolean;
-    listenerCount<E extends keyof EventMap>(event: E): number;
+    emit<E extends keyof EventMap>(event: E, ...args: Parameters<EventMap[E]>): boolean;
     prependListener<E extends keyof EventMap>(event: E, listener: EventMap[E]): this;
     prependOnceListener<E extends keyof EventMap>(event: E, listener: EventMap[E]): this;
+    
+    on(event: string | symbol, listener: (...args: any[]) => void): this;
+    once(event: string | symbol, listener: (...args: any[]) => void): this;
+    off(event: string | symbol, listener: (...args: any[]) => void): this;
+    addListener(event: string | symbol, listener: (...args: any[]) => void): this;
+    removeListener(event: string | symbol, listener: (...args: any[]) => void): this;
+    removeAllListeners(event: string | symbol): this;
+    listeners(event: string | symbol): ((...args: any[]) => void)[];
+    rawListeners(event: string | symbol): ((...args: any[]) => void)[];
+    emit(event: string | symbol, ...args: any[]): boolean;
+    prependListener(event: string | symbol, listener: (...args: any[]) => void): this;
+    prependOnceListener(event: string | symbol, listener: (...args: any[]) => void): this;
+
+    listenerCount<E extends keyof EventMap>(event: E | string | symbol): number;
     eventNames(): (keyof EventMap)[];
 }
 
@@ -80,6 +93,7 @@ declare namespace ServerSessionEvent {
 
     interface MCError extends Frame {
         purpose: "error";
+        requestId: string;
         statusCode?: number;
         statusMessage?: number;
         body: any;
@@ -224,7 +238,7 @@ export declare class WSClient extends TypedEventEmitter<ClientEvent.Map> {
     isEncrypted(): boolean;
     sendMessage(message: any): void;
     sendFrame(messagePurpose: string, body: any, requestId: string, extraHeaders: any): void;
-    sendError(statusCode: number, statusMessage: string): void;
+    sendError(statusCode: number, statusMessage: string, requestId?: string): void;
     sendEvent(eventName: string, body: any): void;
     publishEvent(eventName: string, body: any): void;
     respondCommand(requestId: string, body: any): void;
