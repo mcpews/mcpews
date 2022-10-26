@@ -39,7 +39,7 @@ declare class TypedEventEmitter<EventMap extends { [key in keyof EventMap]: (...
     emit<E extends keyof EventMap>(event: E, ...args: Parameters<EventMap[E]>): boolean;
     prependListener<E extends keyof EventMap>(event: E, listener: EventMap[E]): this;
     prependOnceListener<E extends keyof EventMap>(event: E, listener: EventMap[E]): this;
-    
+
     on(event: string | symbol, listener: (...args: any[]) => void): this;
     once(event: string | symbol, listener: (...args: any[]) => void): this;
     off(event: string | symbol, listener: (...args: any[]) => void): this;
@@ -91,6 +91,13 @@ declare namespace ServerSessionEvent {
         body: any;
     }
 
+    interface CommandAgentResponse extends Frame {
+        purpose: "action:agent";
+        requestId: string;
+        actionName: string;
+        body: any;
+    }
+
     interface MCError extends Frame {
         purpose: "error";
         requestId: string;
@@ -104,6 +111,7 @@ declare namespace ServerSessionEvent {
         error: (event: Error) => void;
         event: (event: Event) => void;
         commandResponse: (event: CommandResponse) => void;
+        commandAgentResponse: (event: CommandAgentResponse) => void;
         mcError: (event: MCError) => void;
         customFrame: (event: Frame) => void;
         message: (event: Frame) => void;
@@ -113,6 +121,7 @@ declare namespace ServerSessionEvent {
     type EncryptionEnabledCallback = Map["encryptionEnabled"];
     type EventCallback = Map["event"];
     type CommandCallback = Map["commandResponse"];
+    type CommandAgentCallback = Map["commandResponse"];
 }
 
 declare class Session extends TypedEventEmitter<ServerSessionEvent.Map> {
@@ -130,6 +139,8 @@ declare class Session extends TypedEventEmitter<ServerSessionEvent.Map> {
     unsubscribe(event: string, callback: ServerSessionEvent.EventCallback): void;
     sendCommandRaw(requestId: string, command: string): void;
     sendCommand(command: string | string[], callback?: ServerSessionEvent.CommandCallback): void;
+    sendCommandAgentRaw(requestId: string, command: string): void;
+    sendCommandAgent(command: string | string[], callback?: ServerSessionEvent.CommandAgentCallback): void;
     sendCommandLegacyRaw(requestId: string, commandName: string, overload: string, input: any): void;
     sendCommandLegacy(
         commandName: string,
@@ -159,6 +170,7 @@ export declare class WSServer extends TypedEventEmitter<ServerEvent.Map> {
 
     constructor(port: number, handleClient?: ServerEvent.ClientCallback);
     broadcastCommand(command: string, callback?: ServerSessionEvent.CommandCallback): void;
+    broadcastCommandAgent(command: string, callback?: ServerSessionEvent.CommandAgentCallback): void;
     broadcastSubscribe(event: string, callback: ServerSessionEvent.EventCallback): void;
     broadcastUnsubscribe(event: string, callback: ServerSessionEvent.EventCallback): void;
     disconnectAll(force?: boolean): void;
@@ -207,6 +219,15 @@ declare namespace ClientEvent {
         handleEncryptionHandshake(): boolean;
     }
 
+    interface CommandAgent extends Frame {
+        purpose: "action:agent";
+        requestId: string;
+        commandLine: string;
+        body: any;
+        respond(body: any): void;
+        handleEncryptionHandshake(): boolean;
+    }
+
     interface LegacyCommand extends Frame {
         purpose: "command";
         requestId: string;
@@ -223,6 +244,7 @@ declare namespace ClientEvent {
         subscribe: (event: Subscribe) => void;
         unsubscribe: (event: Unsubscribe) => void;
         command: (event: Command) => void;
+        commandAgent: (event: CommandAgent) => void;
         commandLegacy: (event: LegacyCommand) => void;
         customFrame: (event: Frame) => void;
         message: (event: Frame) => void;
@@ -242,6 +264,7 @@ export declare class WSClient extends TypedEventEmitter<ClientEvent.Map> {
     sendEvent(eventName: string, body: any): void;
     publishEvent(eventName: string, body: any): void;
     respondCommand(requestId: string, body: any): void;
+    respondCommandAgent(requestId: string, actionName: string, body: any): void;
     disconnect(): void;
 }
 
