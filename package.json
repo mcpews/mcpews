@@ -1,15 +1,19 @@
 {
   "name": "mcpews",
-  "version": "3.0.2",
+  "version": "4.0.0",
   "description": "A library that supports MCPE Websocket Protocol",
-  "main": "lib/index.js",
+  "type": "module",
+  "main": "./dist/index.js",
   "bin": {
-    "mcpews": "./src/repl.js",
-    "mcpewsmitm": "./src/mitm.js"
+    "mcpews": "./dist/repl.js",
+    "mcpewsmitm": "./dist/mitm.js"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "lint": "eslint --fix ."
+    "clean": "rimraf ./dist",
+    "build": "tsc",
+    "lint": "eslint --fix src",
+    "test": "jest",
+    "watch": "tsc --watch --preserveWatchOutput"
   },
   "repository": {
     "type": "git",
@@ -27,12 +31,23 @@
   },
   "homepage": "https://github.com/XeroAlpha/mcpews",
   "dependencies": {
-    "uuid": "^8.3.2",
-    "ws": "^8.6.0"
+    "p-event": "^6.0.0",
+    "ws": "^8.14.2"
   },
   "devDependencies": {
-    "eslint": "^8.15.0",
-    "eslint-config-airbnb-base": "^15.0.0",
-    "eslint-plugin-import": "^2.26.0"
+    "@types/jest": "^29.5.0",
+    "@types/node": "^18.15.11",
+    "@types/ws": "^8.5.4",
+    "@typescript-eslint/eslint-plugin": "^6.7.2",
+    "@typescript-eslint/parser": "^6.7.2",
+    "eslint": "^8.50.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "jest": "^29.5.0",
+    "prettier": "^3.0.3",
+    "rimraf": "^5.0.1",
+    "ts-jest": "^29.0.5",
+    "typedoc": "^0.25.1",
+    "typescript": "^5.2.2"
   }
 }
