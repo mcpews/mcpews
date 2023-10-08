@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "types": [
+      "@types/node",
+      "@types/jest"
+    ],
+    "noEmit": true,
+    "allowJs": true
+  },
+  "extends": "./tsconfig.json",
+  "include": [
+    ".eslintrc.cjs",
+    "jest.config.cjs",
+    "src/test.ts"
+  ],
+  "exclude": []
+}

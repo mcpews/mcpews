@@ -12,7 +12,10 @@ module.exports = {
     ],
     parser: '@typescript-eslint/parser',
     parserOptions: {
-        project: true,
+        project: [
+            './tsconfig.eslint.json',
+            './tsconfig.json'
+        ],
         tsconfigRootDir: __dirname,
     },
     env: {
@@ -21,7 +24,14 @@ module.exports = {
     },
     rules: {
         'prettier/prettier': 'error',
-        '@typescript-eslint/adjacent-overload-signatures': 'off',
         '@typescript-eslint/no-unsafe-declaration-merging': 'off'
-    }
+    },
+    overrides: [
+        {
+            files: ['src/test.ts'],
+            env: { 'jest': true, 'node': true },
+            plugins: ['jest'],
+            extends: ['plugin:jest/recommended']
+        }
+    ]
 };

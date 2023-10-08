@@ -1,4 +1,4 @@
 node_modules
 dist
-jest.config.js
+jest.config.cjs
 .eslintrc.cjs

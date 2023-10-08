@@ -397,7 +397,7 @@ export class ServerSession extends Session {
         const requestId = randomUUID();
         if (callback) {
             this.setResponser(requestId, (frame) => {
-                if (frame.purpose === `data:${dataType}`) {
+                if (frame.purpose === 'data') {
                     const frameBase = frame as DataFrameBase;
                     const dataFrame = {
                         ...frameBase,
