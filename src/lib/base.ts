@@ -174,12 +174,12 @@ Quick replacement for event listeners
 - From:
 \s*(\w+):\s*(\((.+)\)\s*=>\s*.+?);
 - To:
-on(eventName: "$1", listener: $2): this;
-once(eventName: "$1", listener: $2): this;
-off(eventName: "$1", listener: $2): this;
-addListener(eventName: "$1", listener: $2): this;
-removeListener(eventName: "$1", listener: $2): this;
-emit(eventName: "$1", $3): boolean;
+on(eventName: '$1', listener: $2): this;
+once(eventName: '$1', listener: $2): this;
+off(eventName: '$1', listener: $2): this;
+addListener(eventName: '$1', listener: $2): this;
+removeListener(eventName: '$1', listener: $2): this;
+emit(eventName: '$1', $3): boolean;
 */
 
 export interface SessionEventMap {

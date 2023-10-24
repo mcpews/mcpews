@@ -1,17 +1,35 @@
+import { randomUUID } from 'crypto';
 import {
+    AgentActionFrame,
+    AgentActionResponseFrame,
     AppSession,
     AppSessionConnection,
+    ChatEventFrame,
+    ChatEventFrameType,
+    ChatSubscribeFrame,
+    ChatUnsubscribeFrame,
     ClientConnection,
+    ClientError,
     CommandFrame,
     CommandResponseFrame,
+    DataFrame,
+    DataRequestFrame,
+    EncryptRequest,
+    EncryptionMode,
     EventFrame,
+    LegacyCommandFrame,
+    MinecraftAgentActionType,
+    MinecraftDataType,
     ServerSession,
     SubscribeFrame,
     UnsubscribeFrame,
+    Version,
     WSApp,
     WSClient,
     WSServer
 } from './index';
+import WebSocket from 'ws';
+import { pEvent } from 'p-event';
 
 const jest = import.meta.jest;
 
@@ -71,19 +89,26 @@ describe('basic server and client', () => {
     let server: WSServer;
     let session: ServerSession;
     let client: WSClient;
-    beforeAll(async () => {
+    beforeEach(async () => {
         server = new WSServer(port);
         const callback = jestCallback<[ClientConnection]>();
         server.once('client', callback);
         client = new WSClient(`ws://127.0.0.1:${port}`);
         const clientConn = await callback.haveBeenCalledWith();
         session = clientConn.session;
+        if (session.socket.readyState !== WebSocket.OPEN) {
+            await pEvent(session.socket, 'open');
+        }
+        if (client.socket.readyState !== WebSocket.OPEN) {
+            await pEvent(client.socket, 'open');
+        }
     });
-    afterAll(async () => {
-        await delay(100);
+    afterEach(async () => {
         (session as ServerSession | undefined)?.disconnect(true);
         (client as WSClient | undefined)?.disconnect();
-        server.close();
+        await new Promise((resolve) => {
+            server.close(resolve);
+        });
     });
 
     test('send command and respond', async () => {
@@ -92,6 +117,9 @@ describe('basic server and client', () => {
 
         const sendCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
             // #2 respond command
+            if (frame.handleEncryptionHandshake()) {
+                return;
+            }
             frame.respond(expectedResponse);
         });
         const recvCallback = jestCallback<[CommandResponseFrame]>();
@@ -102,12 +130,12 @@ describe('basic server and client', () => {
 
         // #3 receive response
         const response = await recvCallback.haveBeenCalledWith();
+        expect(response.body).toEqual(expectedResponse);
+        expect(response.requestId).toEqual(requestId);
 
         expect(sendCallback).toHaveBeenCalledTimes(1);
         expect(sendCallback.mock.calls[0][0].commandLine).toEqual(expectedCommand);
         expect(sendCallback.mock.calls[0][0].requestId).toEqual(requestId);
-        expect(response.body).toEqual(expectedResponse);
-        expect(response.requestId).toEqual(requestId);
 
         client.off('command', sendCallback);
     });
@@ -115,7 +143,7 @@ describe('basic server and client', () => {
     test('send command respond raw', async () => {
         const expectedCommand = ['/say', 'Hi, there!'];
         const expectedResponse = { message: 'Yes! I am here!' };
-        const requestId = 'f4ca4a68-dcf2-461b-bdce-bf699b275336';
+        const requestId = randomUUID();
 
         const sendCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
             // #2 respond command
@@ -130,14 +158,80 @@ describe('basic server and client', () => {
 
         // #3 receive response
         const response = await recvCallback.haveBeenCalledWith();
+        expect(response.body).toEqual(expectedResponse);
+        expect(response.requestId).toEqual(requestId);
 
         expect(sendCallback).toHaveBeenCalledTimes(1);
         expect(sendCallback.mock.calls[0][0].commandLine).toEqual(expectedCommand.join(' '));
         expect(sendCallback.mock.calls[0][0].requestId).toEqual(requestId);
+
+        client.off('command', sendCallback);
+        session.off('commandResponse', recvCallback);
+    });
+
+    test('send legacy command and respond', async () => {
+        const expectedCommand = 'say';
+        const expectedOverload = 'default';
+        const expectedInput = { text: 'Hi there!' };
+        const expectedResponse = { message: 'Yes! I am here!' };
+
+        const sendCallback = jest.fn<undefined, [LegacyCommandFrame]>((frame) => {
+            // #2 respond command
+            frame.respond(expectedResponse);
+        });
+        const recvCallback = jestCallback<[CommandResponseFrame]>();
+        client.on('commandLegacy', sendCallback);
+
+        // #1 send command request
+        const requestId = session.sendCommandLegacy(expectedCommand, expectedOverload, expectedInput, recvCallback);
+
+        // #3 receive response
+        const response = await recvCallback.haveBeenCalledWith();
         expect(response.body).toEqual(expectedResponse);
         expect(response.requestId).toEqual(requestId);
 
-        client.off('command', sendCallback);
+        expect(sendCallback).toHaveBeenCalledTimes(1);
+        expect(sendCallback.mock.calls[0][0].commandName).toEqual(expectedCommand);
+        expect(sendCallback.mock.calls[0][0].overload).toEqual(expectedOverload);
+        expect(sendCallback.mock.calls[0][0].input).toEqual(expectedInput);
+        expect(sendCallback.mock.calls[0][0].requestId).toEqual(requestId);
+        expect(() => {
+            (sendCallback.mock.calls[0][0] as unknown as CommandFrame).handleEncryptionHandshake();
+        }).toThrow();
+
+        client.off('commandLegacy', sendCallback);
+    });
+
+    test('send legacy command respond raw', async () => {
+        const expectedCommand = 'say';
+        const expectedOverload = 'default';
+        const expectedInput = { text: 'Hi there!' };
+        const expectedResponse = { message: 'Yes! I am here!' };
+        const requestId = randomUUID();
+
+        const sendCallback = jest.fn<undefined, [LegacyCommandFrame]>((frame) => {
+            // #2 respond command
+            client.respondCommand(frame.requestId, expectedResponse);
+        });
+        const recvCallback = jestCallback<[CommandResponseFrame]>();
+        client.on('commandLegacy', sendCallback);
+        session.on('commandResponse', recvCallback);
+
+        // #1 send command request raw
+        session.sendCommandLegacyRaw(requestId, expectedCommand, expectedOverload, expectedInput);
+
+        // #3 receive response
+        const response = await recvCallback.haveBeenCalledWith();
+        expect(response.body).toEqual(expectedResponse);
+        expect(response.requestId).toEqual(requestId);
+
+        expect(sendCallback).toHaveBeenCalledTimes(1);
+        expect(sendCallback.mock.calls[0][0].commandName).toEqual(expectedCommand);
+        expect(sendCallback.mock.calls[0][0].overload).toEqual(expectedOverload);
+        expect(sendCallback.mock.calls[0][0].input).toEqual(expectedInput);
+        expect(sendCallback.mock.calls[0][0].requestId).toEqual(requestId);
+
+        client.off('commandLegacy', sendCallback);
         session.off('commandResponse', recvCallback);
     });
 
@@ -191,7 +285,7 @@ describe('basic server and client', () => {
         session.off('event', eventListener);
     });
 
-    test('subscribe event raw and publish event (V1)', async () => {
+    test('subscribe event raw and publish event (V2)', async () => {
         const eventName = 'TestEventName';
         const expectedFirstEventBody = { firstEvent: 1 };
         const expectedSecondEventBody = { secondEvent: 'hi' };
@@ -201,6 +295,7 @@ describe('basic server and client', () => {
         session.on('event', eventListener);
 
         // #1 publish event before subscribed
+        client.version = Version.V1_1_0;
         client.publishEvent(eventName, expectedFirstEventBody);
         await delay(100);
         expect(eventListener).toHaveBeenCalledTimes(0);
@@ -222,22 +317,290 @@ describe('basic server and client', () => {
 
         session.off('event', eventListener);
     });
+
+    test('error event', async () => {
+        const errorCode = 10001;
+        const errorMessage = 'This is a test error message';
+        const requestId = randomUUID();
+
+        const errorListener = jestCallback<[ClientError]>();
+        session.on('clientError', errorListener);
+
+        // #1 send error
+        client.sendError(errorCode, errorMessage, requestId);
+
+        // #2 received error
+        const error = await errorListener.haveBeenCalledWith();
+        expect(error.statusCode).toEqual(errorCode);
+        expect(error.statusMessage).toEqual(errorMessage);
+        expect(error.requestId).toEqual(requestId);
+        expect(error.frame.requestId).toEqual(requestId);
+        expect(error.message).toEqual(errorMessage);
+
+        session.off('clientError', errorListener);
+    });
+
+    test('subscribe chat', async () => {
+        const steve = 'Steve';
+        const alex = 'Alex';
+        const chatMessageFilter = 'hello';
+        const chatType = ChatEventFrameType.Say;
+        const chatMessage = 'Nice to meet you';
+
+        const chatSubscribeCallback = jestCallback<[ChatSubscribeFrame]>();
+        const chatUnsubscribeCallback = jestCallback<[ChatUnsubscribeFrame]>();
+        const chatCallback = jestCallback<[ChatEventFrame]>();
+        client.on('chatSubscribe', chatSubscribeCallback);
+        client.on('chatUnsubscribe', chatUnsubscribeCallback);
+
+        // #1 subscribe chat
+        const requestId = session.subscribeChat(steve, alex, chatMessageFilter, chatCallback);
+        const chatSubscription = await chatSubscribeCallback.haveBeenCalledWith();
+        expect(chatSubscription.sender).toEqual(steve);
+        expect(chatSubscription.receiver).toEqual(alex);
+        expect(chatSubscription.chatMessage).toEqual(chatMessageFilter);
+        expect(chatSubscription.requestId).toEqual(requestId);
+
+        // #2 send chat event
+        client.sendChat(requestId, chatType, alex, steve, chatMessage);
+        const chatEvent = await chatCallback.haveBeenCalledWith();
+        expect(chatEvent.sender).toEqual(alex);
+        expect(chatEvent.receiver).toEqual(steve);
+        expect(chatEvent.chatMessage).toEqual(chatMessage);
+        expect(chatEvent.chatType).toEqual(chatType);
+
+        // #3 unsubscribe chat
+        session.unsubscribeChat(requestId);
+        const chatUnsubscription = await chatUnsubscribeCallback.haveBeenCalledWith();
+        expect(chatUnsubscription.subscribeRequestId).toEqual(requestId);
+
+        // #4 unsubscribe chat all
+        chatUnsubscribeCallback.clear();
+        session.unsubscribeChatAll();
+        const chatUnsubscriptionAll = await chatUnsubscribeCallback.haveBeenCalledWith();
+        expect(chatUnsubscriptionAll.subscribeRequestId).toBeUndefined();
+
+        client.off('chatSubscribe', chatSubscribeCallback);
+    });
+
+    test('send agent action and respond', async () => {
+        const expectedCommand = '/agent test';
+        const expectedResponse = { message: 'Yes! I am here!' };
+        const expectedAgentAction = { data: 'agent action' };
+        const expectedAction = MinecraftAgentActionType.Inspect;
+        const expectedActionName = 'inspect';
+
+        const sendCallback = jest.fn<undefined, [AgentActionFrame]>((frame) => {
+            // #2 respond command
+            frame.respondCommand(expectedResponse);
+            frame.respondAgentAction(expectedAction, expectedActionName, expectedAgentAction);
+        });
+        const recvCallback = jestCallback<[AgentActionResponseFrame]>();
+        client.on('agentAction', sendCallback);
+
+        // #1 send command request
+        const requestId = session.sendAgentCommand(expectedCommand, recvCallback);
+
+        // #3 receive response
+        const response = await recvCallback.haveBeenCalledWith();
+        expect(response.body).toEqual(expectedAgentAction);
+        expect(response.action).toEqual(expectedAction);
+        expect(response.actionName).toEqual(expectedActionName);
+        expect(response.commandResponse).toBeDefined();
+        expect(response.commandResponse?.body).toEqual(expectedResponse);
+        expect(response.requestId).toEqual(requestId);
+        expect(response.commandResponse?.requestId).toEqual(requestId);
+
+        expect(sendCallback).toHaveBeenCalledTimes(1);
+        expect(sendCallback.mock.calls[0][0].commandLine).toEqual(expectedCommand);
+        expect(sendCallback.mock.calls[0][0].requestId).toEqual(requestId);
+
+        client.off('agentAction', sendCallback);
+    });
+
+    test('send data request and respond', async () => {
+        const dataType = MinecraftDataType.Block;
+        const dataResponse = [{ id: 'mcpews:test', aux: 0, name: 'mcpews test' }];
+
+        const sendCallback = jest.fn<undefined, [DataRequestFrame<typeof dataType>]>((frame) => {
+            // #2 respond command
+            frame.respond(dataResponse);
+        });
+        const recvCallback = jestCallback<[DataFrame<typeof dataType, typeof dataResponse>]>();
+        client.setDataResponser(dataType, sendCallback);
+
+        // #1 send data request
+        const requestId = session.fetchData(dataType, recvCallback);
+
+        // #3 receive response
+        const response = await recvCallback.haveBeenCalledWith();
+        expect(response.body).toEqual(dataResponse);
+        expect(response.dataType).toEqual(dataType);
+        expect(response.requestId).toEqual(requestId);
+
+        expect(sendCallback).toHaveBeenCalledTimes(1);
+        expect(sendCallback.mock.calls[0][0].purpose).toEqual(`data:${dataType}`);
+        expect(sendCallback.mock.calls[0][0].requestId).toEqual(requestId);
+
+        client.clearDataResponser(dataType);
+    });
+
+    test('encryption by command', async () => {
+        const expectedCommand = '/say This message is encrypted!';
+        const expectedResponse = { message: 'Yes! It is encrypted!' };
+
+        const handshakeResults = [] as boolean[];
+        const commandCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
+            // #2 handle encryption handshake
+            const handshakeResult = frame.handleEncryptionHandshake();
+            handshakeResults.push(handshakeResult);
+            if (!handshakeResult) {
+                frame.respond(expectedResponse);
+            }
+        });
+        const encryptCallback = jestCallback<[ServerSession]>();
+        const commandResponseCallback = jestCallback<[CommandResponseFrame]>();
+        client.on('command', commandCallback);
+
+        // #1 send encryption handshake
+        const encryptableBefore = session.enableEncryption(encryptCallback);
+        expect(encryptableBefore).toBe(true);
+
+        // #3 wait for handshake complete
+        await encryptCallback.haveBeenCalledWith();
+        expect(session.encryption).toBeTruthy();
+        expect(client.encryption).toBeTruthy();
+
+        // #4 check encryptable and other flags
+        const encryptableAfter = session.enableEncryption();
+        expect(encryptableAfter).toBe(false);
+        expect(session.encrypted).toBe(false); // No data transmitted, so assume it is not encrypted yet.
+        expect(client.encrypted).toBe(false);
+
+        // #5 transmit data
+        session.sendCommand(expectedCommand, commandResponseCallback);
+        const commandResponse = await commandResponseCallback.haveBeenCalledWith();
+        expect(commandResponse.body).toEqual(expectedResponse);
+        expect(session.encrypted).toBe(true);
+        expect(client.encrypted).toBe(true);
+
+        expect(commandCallback).toHaveBeenCalledTimes(2);
+        expect(commandCallback.mock.calls[0][0].commandLine).toContain('enableencryption');
+        expect(commandCallback.mock.calls[1][0].commandLine).toEqual(expectedCommand);
+        expect(handshakeResults).toEqual([true, false]);
+
+        client.off('command', commandCallback);
+    });
+
+    test('encryption by frame (cfb8)', async () => {
+        const expectedCommand = '/say This message is encrypted!';
+        const expectedResponse = { message: 'Yes! It is encrypted!' };
+
+        const handshakeResults = [] as boolean[];
+        const commandCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
+            // #2 handle encryption handshake
+            const handshakeResult = frame.handleEncryptionHandshake();
+            handshakeResults.push(handshakeResult);
+            if (!handshakeResult) {
+                frame.respond(expectedResponse);
+            }
+        });
+        const encryptRequestCallback = jest.fn<undefined, [EncryptRequest]>();
+        const encryptCallback = jestCallback<[ServerSession]>();
+        const commandResponseCallback = jestCallback<[CommandResponseFrame]>();
+        client.on('command', commandCallback);
+        client.on('encryptRequest', encryptRequestCallback);
+
+        // #1 send encryption handshake
+        session.version = Version.V1_0_0;
+        const encryptableBefore = session.enableEncryption(EncryptionMode.Aes256cfb8, encryptCallback);
+        expect(encryptableBefore).toBe(true);
+
+        // #2 wait for handshake complete
+        await encryptCallback.haveBeenCalledWith();
+        expect(session.encryption).toBeTruthy();
+        expect(client.encryption).toBeTruthy();
+
+        // #3 transmit data
+        session.sendCommand(expectedCommand, commandResponseCallback);
+        const commandResponse = await commandResponseCallback.haveBeenCalledWith();
+        expect(commandResponse.body).toEqual(expectedResponse);
+        expect(session.encrypted).toBe(true);
+        expect(client.encrypted).toBe(true);
+
+        expect(encryptRequestCallback).toHaveBeenCalledTimes(1);
+        expect(() => {
+            encryptRequestCallback.mock.calls[0][0].cancel();
+        }).toThrow();
+        expect(commandCallback).toHaveBeenCalledTimes(1);
+        expect(commandCallback.mock.calls[0][0].commandLine).toEqual(expectedCommand);
+        expect(handshakeResults).toEqual([false]);
+
+        client.off('command', commandCallback);
+        client.off('encryptRequest', encryptRequestCallback);
+    });
+
+    test('encryption by frame (cfb)', async () => {
+        const expectedCommand = '/say This message is encrypted!';
+        const expectedResponse = { message: 'Yes! It is encrypted!' };
+
+        const handshakeResults = [] as boolean[];
+        const commandCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
+            // #2 handle encryption handshake
+            const handshakeResult = frame.handleEncryptionHandshake();
+            handshakeResults.push(handshakeResult);
+            if (!handshakeResult) {
+                frame.respond(expectedResponse);
+            }
+        });
+        const encryptCallback = jestCallback<[ServerSession]>();
+        const commandResponseCallback = jestCallback<[CommandResponseFrame]>();
+        client.on('command', commandCallback);
+
+        // #1 send encryption handshake
+        session.version = Version.V1_0_0;
+        const encryptableBefore = session.enableEncryption(EncryptionMode.Aes256cfb, encryptCallback);
+        expect(encryptableBefore).toBe(true);
+
+        // #2 wait for handshake complete
+        await encryptCallback.haveBeenCalledWith();
+        expect(session.encryption).toBeTruthy();
+        expect(client.encryption).toBeTruthy();
+
+        // #3 transmit data
+        session.sendCommand(expectedCommand, commandResponseCallback);
+        const commandResponse = await commandResponseCallback.haveBeenCalledWith();
+        expect(commandResponse.body).toEqual(expectedResponse);
+        expect(session.encrypted).toBe(true);
+        expect(client.encrypted).toBe(true);
+
+        expect(commandCallback).toHaveBeenCalledTimes(1);
+        expect(commandCallback.mock.calls[0][0].commandLine).toEqual(expectedCommand);
+        expect(handshakeResults).toEqual([false]);
+
+        client.off('command', commandCallback);
+    });
 });
 
 describe('app server and client', () => {
     let app: WSApp;
     let session: AppSession;
     let client: WSClient;
-    beforeAll(async () => {
+    beforeEach(async () => {
         app = new WSApp(port);
         const callback = jestCallback<[AppSessionConnection]>();
         app.once('session', callback);
         client = new WSClient(`ws://127.0.0.1:${port}`);
         const clientConn = await callback.haveBeenCalledWith();
         session = clientConn.session;
+        if (session.session.socket.readyState !== WebSocket.OPEN) {
+            await pEvent(session.session.socket, 'open');
+        }
+        if (client.socket.readyState !== WebSocket.OPEN) {
+            await pEvent(client.socket, 'open');
+        }
     });
-    afterAll(async () => {
-        await delay(100);
+    afterEach(async () => {
         await (session as AppSession | undefined)?.disconnect(true);
         (client as WSClient | undefined)?.disconnect();
         app.close();
@@ -253,10 +616,10 @@ describe('app server and client', () => {
         client.on('command', sendCallback);
 
         const response = await session.command(expectedCommand);
+        expect(response.body).toEqual(expectedResponse);
 
         expect(sendCallback).toHaveBeenCalledTimes(1);
         expect(sendCallback.mock.calls[0][0].commandLine).toEqual(expectedCommand);
-        expect(response.body).toEqual(expectedResponse);
 
         client.off('command', sendCallback);
     });

@@ -32,14 +32,12 @@ import {
     ResponsePurpose
 } from './protocol.js';
 
-export type CommandResponseFrameBase<B extends CommandResponseBody = CommandResponseBody> = Frame<
+export type CommandResponseFrame<B extends CommandResponseBody = CommandResponseBody> = Frame<
     ResponsePurpose.Command,
     B
 >;
-export type CommandResponseFrame<B extends CommandResponseBody = CommandResponseBody> = CommandResponseFrameBase<B>;
 
-export type ErrorFrameBase = Frame<ResponsePurpose.Error, ErrorBody>;
-export type ErrorFrame = ErrorFrameBase;
+export type ErrorFrame = Frame<ResponsePurpose.Error, ErrorBody>;
 export class ClientError extends Error {
     frame: ErrorFrame;
     requestId: string;
@@ -61,14 +59,15 @@ export interface EventFrame<B extends EventBody = EventBody> extends EventFrameB
     eventName: string;
 }
 
-export type MinecraftAgentActionResponseFrameBase<B = unknown> = Frame<
+export type AgentActionResponseFrameBase<B = unknown> = Frame<
     ResponsePurpose.AgentAction,
     B,
     MinecraftAgentActionResponseHeader
 >;
-export interface MinecraftAgentActionResponseFrame<B = unknown> extends MinecraftAgentActionResponseFrameBase<B> {
+export interface AgentActionResponseFrame<B = unknown> extends AgentActionResponseFrameBase<B> {
     action: MinecraftAgentActionType;
     actionName: string;
+    commandResponse?: CommandResponseFrame;
 }
 
 export type ChatEventFrameBase = Frame<
@@ -295,20 +294,23 @@ export class ServerSession extends Session {
         );
     }
 
-    sendAgentCommand<B = unknown>(
-        command: string | string[],
-        callback?: (frame: MinecraftAgentActionResponseFrame<B>) => void
-    ) {
+    sendAgentCommand<B = unknown>(command: string | string[], callback?: (frame: AgentActionResponseFrame<B>) => void) {
         const requestId = randomUUID();
         if (callback) {
+            let commandResponse: CommandResponseFrame | undefined;
             this.setResponser(requestId, (frame) => {
+                if (frame.purpose === ResponsePurpose.Command) {
+                    commandResponse = frame as CommandResponseFrame;
+                    return false;
+                }
                 if (frame.purpose === ResponsePurpose.AgentAction) {
                     const { action, actionName } = frame.header;
                     const agentActionFrame = {
                         ...frame,
                         action,
-                        actionName
-                    } as MinecraftAgentActionResponseFrame<B>;
+                        actionName,
+                        commandResponse
+                    } as AgentActionResponseFrame<B>;
                     callback.call(this, agentActionFrame);
                     return true;
                 }
@@ -408,7 +410,7 @@ export class ServerSession extends Session {
                     const frameBase = frame as DataFrameBase;
                     const dataFrame = {
                         ...frameBase,
-                        dataType: ''
+                        dataType: frameBase.header.dataType
                     } as DataFrame<Name, ReturnType>;
                     callback.call(this, dataFrame);
                     return true;
