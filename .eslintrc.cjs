@@ -24,7 +24,8 @@ module.exports = {
     },
     rules: {
         'prettier/prettier': 'error',
-        '@typescript-eslint/no-unsafe-declaration-merging': 'off'
+        '@typescript-eslint/no-unsafe-declaration-merging': 'off',
+        '@typescript-eslint/no-unsafe-enum-comparison': 'off'
     },
     overrides: [
         {

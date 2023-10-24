@@ -7,7 +7,8 @@ import {
     CommandRequestLegacyBody,
     EncryptionMode,
     EventSubscriptionBody,
-    RequestPurpose
+    RequestPurpose,
+    ResponsePurpose
 } from './protocol.js';
 
 export type CommandFrameBase = Frame<RequestPurpose.Command, CommandRequestBody>;
@@ -112,7 +113,7 @@ export class WSClient extends Session {
 
     sendError(statusCode?: number, statusMessage?: string, requestId?: string) {
         this.sendFrame(
-            'error',
+            ResponsePurpose.Error,
             {
                 statusCode,
                 statusMessage
@@ -123,9 +124,9 @@ export class WSClient extends Session {
 
     sendEvent(eventName: string, body: Record<string, unknown>) {
         if (this.version >= Version.V1_1_0) {
-            this.sendFrame('event', body, undefined, { eventName });
+            this.sendFrame(ResponsePurpose.Event, body, undefined, { eventName });
         } else {
-            this.sendFrame('event', {
+            this.sendFrame(ResponsePurpose.Event, {
                 ...body,
                 eventName
             });
@@ -140,7 +141,7 @@ export class WSClient extends Session {
     }
 
     respondCommand(requestId: string, body: unknown) {
-        this.sendFrame('commandResponse', body, requestId);
+        this.sendFrame(ResponsePurpose.Command, body, requestId);
     }
 
     disconnect() {

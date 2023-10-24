@@ -28,6 +28,7 @@ import {
     MinecraftDataType,
     MinecraftItemData,
     MinecraftMobData,
+    RequestPurpose,
     ResponsePurpose
 } from './protocol.js';
 
@@ -111,23 +112,25 @@ export class ServerSession extends Session {
         this.chatResponsers = new Set();
         this.exchangingKey = false;
         const eventHandler = (frame: EventFrameBase) => {
-            const eventName = frame.header.eventName ?? frame.body.eventName ?? '';
-            const listeners = this.eventListeners.get(eventName);
-            const eventFrame = {
-                ...frame,
-                eventName
-            } as EventFrame;
-            if (listeners) {
-                const listenersCopy = new Set(listeners);
-                listenersCopy.forEach((e) => {
-                    try {
-                        e.call(this, eventFrame);
-                    } catch (err) {
-                        this.emit('error', err as Error);
-                    }
-                });
-            } else {
-                this.emit('event', eventFrame);
+            const eventName = frame.header.eventName ?? frame.body.eventName;
+            if (eventName !== undefined) {
+                const listeners = this.eventListeners.get(eventName);
+                const eventFrame = {
+                    ...frame,
+                    eventName
+                } as EventFrame;
+                if (listeners) {
+                    const listenersCopy = new Set(listeners);
+                    listenersCopy.forEach((e) => {
+                        try {
+                            e.call(this, eventFrame);
+                        } catch (err) {
+                            this.emit('error', err as Error);
+                        }
+                    });
+                } else {
+                    this.emit('event', eventFrame);
+                }
             }
             return false;
         };
@@ -158,7 +161,7 @@ export class ServerSession extends Session {
             const requestId = randomUUID();
             this.sendEncryptionRequest(requestId, mode, keyExchangeParams.publicKey, keyExchangeParams.salt);
             this.setResponser(requestId, (frame) => {
-                if (frame.purpose === 'ws:encrypt') {
+                if (frame.purpose === ResponsePurpose.EncryptConnection) {
                     const frameBase = frame as EncryptResponseFrameBase;
                     this.exchangingKey = false;
                     encryption.completeKeyExchange(mode, frameBase.body.publicKey);
@@ -188,7 +191,7 @@ export class ServerSession extends Session {
     }
 
     subscribeRaw(eventName: string) {
-        this.sendFrame('subscribe', { eventName } as EventSubscriptionBody);
+        this.sendFrame(RequestPurpose.Subscribe, { eventName } as EventSubscriptionBody);
     }
 
     subscribe<B extends EventBody = EventBody>(eventName: string, callback: (frame: EventFrame<B>) => void) {
@@ -202,7 +205,7 @@ export class ServerSession extends Session {
     }
 
     unsubscribeRaw(eventName: string) {
-        this.sendFrame('unsubscribe', { eventName } as EventSubscriptionBody);
+        this.sendFrame(RequestPurpose.Unsubscribe, { eventName } as EventSubscriptionBody);
     }
 
     unsubscribe<B extends EventBody = EventBody>(eventName: string, callback: (frame: EventFrame<B>) => void) {
@@ -219,7 +222,7 @@ export class ServerSession extends Session {
 
     sendCommandRaw(requestId: string, command: string | string[], version?: CommandVersion) {
         this.sendFrame(
-            'commandRequest',
+            RequestPurpose.Command,
             {
                 version: version ?? MinecraftCommandVersion.Initial,
                 commandLine: Array.isArray(command) ? command.join(' ') : command,
@@ -238,7 +241,7 @@ export class ServerSession extends Session {
         const requestId = randomUUID();
         if (callback) {
             this.setResponser(requestId, (frame) => {
-                if (frame.purpose === 'commandResponse') {
+                if (frame.purpose === ResponsePurpose.Command) {
                     callback.call(this, frame as CommandResponseFrame<B>);
                     return true;
                 }
@@ -250,7 +253,7 @@ export class ServerSession extends Session {
 
     sendCommandLegacyRaw(requestId: string, commandName: string, overload: string, input: Record<string, unknown>) {
         this.sendFrame(
-            'commandRequest',
+            RequestPurpose.Command,
             {
                 version: MinecraftCommandVersion.Initial,
                 name: commandName,
@@ -271,7 +274,7 @@ export class ServerSession extends Session {
         const requestId = randomUUID();
         if (callback) {
             this.setResponser(requestId, (frame) => {
-                if (frame.purpose === 'commandResponse') {
+                if (frame.purpose === ResponsePurpose.Command) {
                     callback.call(this, frame as CommandResponseFrame<B>);
                     return true;
                 }
@@ -283,7 +286,7 @@ export class ServerSession extends Session {
 
     sendAgentCommandRaw(requestId: string, agentCommand: string | string[], version?: CommandVersion) {
         this.sendFrame(
-            'action:agent',
+            RequestPurpose.AgentAction,
             {
                 version: version ?? MinecraftCommandVersion.Initial,
                 commandLine: Array.isArray(agentCommand) ? agentCommand.join(' ') : agentCommand
@@ -299,7 +302,7 @@ export class ServerSession extends Session {
         const requestId = randomUUID();
         if (callback) {
             this.setResponser(requestId, (frame) => {
-                if (frame.purpose === 'action:agent') {
+                if (frame.purpose === ResponsePurpose.AgentAction) {
                     const { action, actionName } = frame.header;
                     const agentActionFrame = {
                         ...frame,
@@ -320,7 +323,11 @@ export class ServerSession extends Session {
     }
 
     subscribeChatRaw(requestId: string, sender?: string | null, receiver?: string | null, message?: string | null) {
-        this.sendFrame('chat:subscribe', { sender, receiver, message } as ChatSubscribeBody, requestId);
+        this.sendFrame(
+            RequestPurpose.ChatMessageSubscribe,
+            { sender, receiver, message } as ChatSubscribeBody,
+            requestId
+        );
     }
 
     subscribeChat(
@@ -332,7 +339,7 @@ export class ServerSession extends Session {
         const requestId = randomUUID();
         if (callback) {
             this.setResponser(requestId, (frame): undefined => {
-                if (frame.purpose === 'chat') {
+                if (frame.purpose === ResponsePurpose.ChatMessage) {
                     const frameBase = frame as ChatEventFrameBase;
                     const eventName = frameBase.header.eventName ?? frameBase.body.eventName ?? '';
                     const { sender, receiver, message: chatMessage, type: chatType } = frameBase.body;
@@ -354,7 +361,7 @@ export class ServerSession extends Session {
     }
 
     unsubscribeChatRaw(requestId?: string) {
-        this.sendFrame('chat:unsubscribe', { requestId } as ChatUnsubscribeBody);
+        this.sendFrame(RequestPurpose.ChatMessageUnsubscribe, { requestId } as ChatUnsubscribeBody);
     }
 
     unsubscribeChat(requestId: string) {
@@ -397,7 +404,7 @@ export class ServerSession extends Session {
         const requestId = randomUUID();
         if (callback) {
             this.setResponser(requestId, (frame) => {
-                if (frame.purpose === 'data') {
+                if (frame.purpose === ResponsePurpose.Data) {
                     const frameBase = frame as DataFrameBase;
                     const dataFrame = {
                         ...frameBase,
@@ -413,7 +420,7 @@ export class ServerSession extends Session {
     }
 
     sendEncryptionRequest(requestId: string, mode: EncryptionMode | number, publicKey: string, salt: string) {
-        this.sendFrame('ws:encrypt', { mode, publicKey, salt } as EncryptRequestBody, requestId);
+        this.sendFrame(RequestPurpose.EncryptConnection, { mode, publicKey, salt } as EncryptRequestBody, requestId);
     }
 
     disconnect(force?: boolean) {

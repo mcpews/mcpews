@@ -66,7 +66,7 @@ export class Session extends EventEmitter {
             this.emit('message', frame);
             const responser = this.responserMap.get(frame.requestId);
             if (responser) {
-                let ret: boolean | undefined = true;
+                let ret: boolean | undefined;
                 try {
                     ret = responser.call(this, frame);
                 } catch (err) {
@@ -81,7 +81,7 @@ export class Session extends EventEmitter {
             }
             const handler = this.handlerMap.get(frame.purpose);
             if (handler) {
-                let ret: boolean | undefined = false;
+                let ret: boolean | undefined;
                 try {
                     ret = handler.call(this, frame);
                 } catch (err) {

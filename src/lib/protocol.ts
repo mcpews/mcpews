@@ -13,7 +13,7 @@ export interface Header<Purpose extends string = string> {
     [key: string]: unknown;
 }
 
-export enum RequestPurpose {
+export const enum RequestPurpose {
     Command = 'commandRequest',
     Subscribe = 'subscribe',
     Unsubscribe = 'unsubscribe',
@@ -26,7 +26,9 @@ export enum RequestPurpose {
     EncryptConnection = 'ws:encrypt'
 }
 
-export enum ResponsePurpose {
+export type DataRequestPurpose<T extends string> = `data:${T}`;
+
+export const enum ResponsePurpose {
     Command = 'commandResponse',
     Error = 'error',
     Event = 'event',
