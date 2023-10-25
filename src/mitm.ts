@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { WSServer, WSClient, Version } from './index.js';
+import { WSServer, WSClient, Version, ChatEventBody } from './index.js';
 
 function main(destAddress: string, sourcePort: number) {
     if (!destAddress) {
@@ -45,6 +45,25 @@ Usage: mcpewsmitm <destination> [port]`.trim()
             session.unsubscribeRaw(eventName);
             console.log(`-> [${clientNo}] unsubscribe: ${eventName}`);
         });
+        client.on('agentAction', ({ requestId, commandLine }) => {
+            session.sendAgentCommandRaw(requestId, commandLine);
+            console.log(`-> [${clientNo}] agentAction: ${requestId} ${commandLine}`);
+        });
+        client.on('chatSubscribe', ({ requestId, sender, receiver, chatMessage }) => {
+            session.subscribeChatRaw(requestId, sender, receiver, chatMessage);
+            const desc = `${sender ?? '*'} -> ${receiver ?? '*'} : ${chatMessage}`;
+            console.log(`-> [${clientNo}] subscribeChat: ${requestId} ${desc}`);
+        });
+        client.on('chatUnsubscribe', ({ subscribeRequestId }) => {
+            session.unsubscribeChatRaw(subscribeRequestId);
+            console.log(`-> [${clientNo}] unsubscribeChat: ${subscribeRequestId}`);
+        });
+        client.on('encryptRequest', () => {
+            session.enableEncryption(() => {
+                console.log(`<- [${clientNo}] completeEncryption`);
+            });
+            console.log(`-> [${clientNo}] encryptRequest (v2)`);
+        });
         client.on('customFrame', ({ message }) => {
             session.sendMessage(message);
             console.log(`-> [${clientNo}] unknown:`, message);
@@ -59,12 +78,18 @@ Usage: mcpewsmitm <destination> [port]`.trim()
             console.log(`-> [${clientNo}] disconnected from client`);
             session.disconnect(true);
         });
+
         session.on('clientError', ({ requestId, statusCode, statusMessage }) => {
             client.sendError(statusCode, statusMessage, requestId);
             console.log(`<- [${clientNo}] error: ${statusMessage}`);
         });
-        session.on('event', ({ purpose, eventName, body }) => {
-            client.publishEvent(eventName, body);
+        session.on('event', ({ requestId, purpose, eventName, body }) => {
+            if (purpose === 'chat') {
+                const chatBody = body as ChatEventBody;
+                client.sendChat(requestId, chatBody.type, chatBody.sender, chatBody.receiver, chatBody.message);
+            } else {
+                client.publishEvent(eventName, body);
+            }
             console.log(`<- [${clientNo}] ${purpose}: ${eventName}`, body);
         });
         session.on('commandResponse', ({ requestId, body }) => {
