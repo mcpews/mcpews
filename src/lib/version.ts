@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-duplicate-enum-values */
 export enum Version {
     V0_0_1 = 0x1,
     V0_0_2 = 0x2,
@@ -11,6 +12,7 @@ export enum Version {
 }
 
 export enum MinecraftCommandVersion {
+    // Internal names
     Initial = 0x1,
     TpRotationClamping = 0x2,
     NewBedrockCmdSystem = 0x3,
@@ -44,7 +46,36 @@ export enum MinecraftCommandVersion {
     EnableSummonRotation = 0x1f,
     SummonCommandDefaultRotation = 0x20,
     PositionalDimensionFiltering = 0x21,
+    CommandSelectorHasItemFilterNoLongerCallsSameItemFunction = 0x22,
+    AgentSweepingBlockTest = 0x22,
+
+    // SemVer names
+    V1_8_0 = 0x8,
+    V1_9_0 = 0x9,
+    V1_13_0 = 0xa,
+    V1_15_0 = 0xb,
+    V1_16_0 = 0xc,
+    V1_16_100 = 0xd,
+    V1_16_210 = 0xe,
+    V1_16_220 = 0xf,
+    V1_17_30 = 0x10,
+    V1_17_40 = 0x11,
+    V1_18_0 = 0x12,
+    V1_18_20 = 0x13,
+    V1_19_0 = 0x14,
+    V1_19_10 = 0x15,
+    V1_19_20 = 0x16,
+    V1_19_30 = 0x17,
+    V1_19_40 = 0x18,
+    V1_19_50 = 0x19,
+    V1_19_60 = 0x1a,
+    V1_19_70 = 0x20,
+    V1_19_80 = 0x21,
     V1_20_0 = 0x22,
     V1_20_10 = 0x23,
-    V1_20_30 = 0x24
+    V1_20_30 = 0x24,
+    V1_20_60 = 0x25,
+    V1_20_70 = 0x26,
+    V1_21_0 = 0x27,
+    V1_21_10 = 0x28
 }
