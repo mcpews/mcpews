@@ -77,5 +77,6 @@ export enum MinecraftCommandVersion {
     V1_20_60 = 0x25,
     V1_20_70 = 0x26,
     V1_21_0 = 0x27,
-    V1_21_10 = 0x28
+    V1_21_10 = 0x28,
+    V1_21_20 = 0x2a
 }

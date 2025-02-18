@@ -1,19 +1,19 @@
 import { WebSocket } from 'ws';
 import { Version } from './version.js';
-import { Frame, Session, SessionEventMap } from './base.js';
+import { type Frame, Session, type SessionEventMap } from './base.js';
 import { ClientEncryption } from './encrypt.js';
 import {
-    ChatEventBody,
+    type ChatEventBody,
     ChatEventFrameType,
-    ChatSubscribeBody,
-    ChatUnsubscribeBody,
-    CommandRequestBody,
-    CommandRequestLegacyBody,
-    DataRequestPurpose,
-    EncryptRequestBody,
-    EncryptResponseBody,
+    type ChatSubscribeBody,
+    type ChatUnsubscribeBody,
+    type CommandRequestBody,
+    type CommandRequestLegacyBody,
+    type DataRequestPurpose,
+    type EncryptRequestBody,
+    type EncryptResponseBody,
     EncryptionMode,
-    EventSubscriptionBody,
+    type EventSubscriptionBody,
     MinecraftAgentActionType,
     RequestPurpose,
     ResponsePurpose

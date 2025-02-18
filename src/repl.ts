@@ -4,9 +4,9 @@ import EventEmitter from 'events';
 import os from 'os';
 import readline from 'readline';
 import { REPLServer, start as startREPL } from 'repl';
-import vm, { Context } from 'vm';
+import vm, { type Context } from 'vm';
 import util from 'util';
-import { AppSession, EventFrame, WSApp } from './index.js';
+import { AppSession, type EventFrame, WSApp } from './index.js';
 
 function sessionEventListener(this: SingleSessionServer, eventName: string, { body }: EventFrame) {
     this.emit('event', eventName, body);

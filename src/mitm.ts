@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { WSServer, WSClient, Version, ChatEventBody } from './index.js';
+import { WSServer, WSClient, Version, type ChatEventBody } from './index.js';
 
 function main(destAddress: string, sourcePort: number) {
     if (!destAddress) {

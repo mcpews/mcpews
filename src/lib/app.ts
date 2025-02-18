@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
-import { CommandResponseFrame, EventFrame, ServerSession, WSServer } from './server.js';
-import { pEvent, CancelablePromise } from 'p-event';
+import { type CommandResponseFrame, type EventFrame, ServerSession, WSServer } from './server.js';
+import { pEvent, type CancelablePromise } from 'p-event';
 import { IncomingMessage } from 'http';
 
 const ERRORCODE_MASK = 1 << 31;

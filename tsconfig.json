@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
-    "moduleResolution": "Node10",
-    "module": "ES2020",
+    "moduleResolution": "NodeNext",
+    "module": "NodeNext",
     "target": "ES2020",
     "lib": [ "ES2020" ],
     "skipLibCheck": true,
@@ -14,6 +14,7 @@
     "strictFunctionTypes": true,
     "strictBindCallApply": true,
     "strictPropertyInitialization": true,
+    "verbatimModuleSyntax": true,
     "esModuleInterop": true,
     "rootDir": "./src",
     "outDir": "./dist",

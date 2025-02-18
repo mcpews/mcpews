@@ -27,7 +27,7 @@ import {
     WSApp,
     WSClient,
     WSServer
-} from './index';
+} from './index.js';
 import WebSocket from 'ws';
 import { pEvent } from 'p-event';
 

@@ -2,7 +2,7 @@ import EventEmitter from 'events';
 import type { WebSocket } from 'ws';
 import { Version } from './version.js';
 import { Encryption } from './encrypt.js';
-import { Header, Message } from './protocol.js';
+import type { Header, Message } from './protocol.js';
 
 export interface Frame<P extends string = string, B = unknown, H extends Header<P> = Header<P>> {
     session: Session;

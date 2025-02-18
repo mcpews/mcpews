@@ -1,4 +1,4 @@
-import { MinecraftCommandVersion, Version } from './version';
+import { MinecraftCommandVersion, Version } from './version.js';
 
 export interface Message<B = unknown, H extends Header = Header> {
     header: H;

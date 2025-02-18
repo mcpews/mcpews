@@ -5,3 +5,4 @@ export * from './lib/encrypt.js';
 export * from './lib/protocol.js';
 export * from './lib/server.js';
 export * from './lib/version.js';
+export * from './lib/status.js';

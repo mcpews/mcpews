@@ -2,32 +2,32 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { randomUUID } from 'crypto';
 import { implementName, ServerEncryption } from './encrypt.js';
 import { MinecraftCommandVersion, Version } from './version.js';
-import { Frame, Session, SessionEventMap } from './base.js';
+import { type Frame, Session, type SessionEventMap } from './base.js';
 import { IncomingMessage } from 'http';
 import { Duplex } from 'stream';
 import {
-    ChatEventBody,
+    type ChatEventBody,
     ChatEventFrameType,
-    ChatSubscribeBody,
-    ChatUnsubscribeBody,
-    CommandRequestBody,
-    CommandRequestLegacyBody,
-    CommandResponseBody,
-    DataFrameHeader,
-    EncryptRequestBody,
-    EncryptResponseBody,
+    type ChatSubscribeBody,
+    type ChatUnsubscribeBody,
+    type CommandRequestBody,
+    type CommandRequestLegacyBody,
+    type CommandResponseBody,
+    type DataFrameHeader,
+    type EncryptRequestBody,
+    type EncryptResponseBody,
     EncryptionMode,
-    ErrorBody,
-    EventBody,
-    EventHeader,
-    EventResponsePurposes,
-    EventSubscriptionBody,
-    MinecraftAgentActionResponseHeader,
+    type ErrorBody,
+    type EventBody,
+    type EventHeader,
+    type EventResponsePurposes,
+    type EventSubscriptionBody,
+    type MinecraftAgentActionResponseHeader,
     MinecraftAgentActionType,
-    MinecraftBlockData,
+    type MinecraftBlockData,
     MinecraftDataType,
-    MinecraftItemData,
-    MinecraftMobData,
+    type MinecraftItemData,
+    type MinecraftMobData,
     RequestPurpose,
     ResponsePurpose
 } from './protocol.js';
