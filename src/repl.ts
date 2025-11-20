@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
-import EventEmitter from 'events';
-import os from 'os';
-import readline from 'readline';
-import { REPLServer, start as startREPL } from 'repl';
-import vm, { type Context } from 'vm';
-import util from 'util';
-import { AppSession, type EventFrame, WSApp } from './index.js';
+import EventEmitter from 'node:events';
+import os from 'node:os';
+import readline from 'node:readline';
+import { type REPLServer, start as startREPL } from 'node:repl';
+import util from 'node:util';
+import vm, { type Context } from 'node:vm';
+import { type AppSession, type EventFrame, WSApp } from './index.js';
 
 function sessionEventListener(this: SingleSessionServer, eventName: string, { body }: EventFrame) {
     this.emit('event', eventName, body);
@@ -99,14 +99,15 @@ class SingleSessionServer extends EventEmitter {
     allConnectCommands(externalOnly?: boolean) {
         const interfaces = os.networkInterfaces();
         const ips = [];
-        Object.values(interfaces).forEach((devInfos) => {
-            if (!devInfos) return;
-            let infoList = devInfos.filter((niInfo) => niInfo.family === 'IPv4');
-            if (externalOnly) {
-                infoList = infoList.filter((niInfo) => !niInfo.internal && niInfo.address !== '127.0.0.1');
+        for (const devInfos of Object.values(interfaces)) {
+            if (devInfos) {
+                let infoList = devInfos.filter((niInfo) => niInfo.family === 'IPv4');
+                if (externalOnly) {
+                    infoList = infoList.filter((niInfo) => !niInfo.internal && niInfo.address !== '127.0.0.1');
+                }
+                ips.push(...infoList.map((niInfo) => niInfo.address));
             }
-            ips.push(...infoList.map((niInfo) => niInfo.address));
-        });
+        }
         if (ips.length === 0) ips.push('0.0.0.0');
         return ips.map((ip) => `/connect ${ip}:${this.port}`);
     }
@@ -129,7 +130,7 @@ class CommandReplServer {
             prompt: OFFLINE_PROMPT,
             eval: (cmd, context, file, callback) => {
                 this.doEval(cmd, context, file, callback);
-            }
+            },
         });
         this.server = new SingleSessionServer(port);
         this.acceptUserInput = true;
@@ -151,7 +152,7 @@ class CommandReplServer {
             .on('online', (address) => {
                 this.printLine(
                     `${OFFLINE_PROMPT}\nConnection established: ${address}.\nType ".help" for more information.`,
-                    true
+                    true,
                 );
                 this.repl.setPrompt(ONLINE_PROMPT);
                 if (this.acceptUserInput) {
@@ -191,7 +192,7 @@ class CommandReplServer {
             const allConnectCommands = this.server.allConnectCommands().join('\n');
             this.printLine(
                 `Type one of following commands in the game console to connect:\n${allConnectCommands}`,
-                true
+                true,
             );
         }
     }
@@ -201,43 +202,43 @@ class CommandReplServer {
             app: {
                 configurable: true,
                 writable: false,
-                value: this.server.app
+                value: this.server.app,
             },
             wss: {
                 configurable: true,
                 writable: false,
-                value: this.server.app.server
+                value: this.server.app.server,
             },
             session: {
                 configurable: true,
-                get: () => this.server.getSession()
+                get: () => this.server.getSession(),
             },
             encrypt: {
                 configurable: true,
-                value: () => this.server.encrypt()
+                value: () => this.server.encrypt(),
             },
             disconnect: {
                 configurable: true,
-                value: () => this.server.disconnect()
+                value: () => this.server.disconnect(),
             },
             subscribe: {
                 configurable: true,
-                value: (eventName: string) => this.server.subscribe(eventName)
+                value: (eventName: string) => this.server.subscribe(eventName),
             },
             unsubscribe: {
                 configurable: true,
-                value: (eventName: string) => this.server.unsubscribe(eventName)
+                value: (eventName: string) => this.server.unsubscribe(eventName),
             },
             command: {
                 configurable: true,
-                value: (commandLine: string) => this.server.sendCommand(commandLine)
+                value: (commandLine: string) => this.server.sendCommand(commandLine),
             },
             commandLegacy: {
                 configurable: true,
                 value: (commandName: string, overload: string, input: Record<string, unknown>) => {
                     return this.server.sendCommandLegacy(commandName, overload, input);
-                }
-            }
+                },
+            },
         });
     }
 
@@ -254,7 +255,7 @@ class CommandReplServer {
                 } else {
                     this.printLine('Connection is not established.');
                 }
-            }
+            },
         });
         this.repl.defineCommand('unsubscribe', {
             help: 'Unsubscribe a event',
@@ -268,7 +269,7 @@ class CommandReplServer {
                 } else {
                     this.printLine('Connection is not established.');
                 }
-            }
+            },
         });
         this.repl.defineCommand('disconnect', {
             help: 'Disconnect from all the clients',
@@ -292,7 +293,7 @@ class CommandReplServer {
                 } else {
                     this.printLine('Connection is not established.');
                 }
-            }
+            },
         });
         this.repl.defineCommand('encrypt', {
             help: 'Encrypt the connection',
@@ -304,7 +305,7 @@ class CommandReplServer {
                 } else {
                     this.printLine('Connection is not established.');
                 }
-            }
+            },
         });
     }
 
@@ -323,7 +324,7 @@ class CommandReplServer {
                 result = this.server.sendCommand(trimmedCmd.slice(1));
             } else if (trimmedCmd.length > 0) {
                 result = vm.runInContext(cmd, context, {
-                    filename: file
+                    filename: file,
                 });
             } else {
                 this.acceptUserInput = true;
@@ -338,7 +339,7 @@ class CommandReplServer {
                         },
                         (err: Error) => {
                             callback(err);
-                        }
+                        },
                     )
                     .finally(() => {
                         this.acceptUserInput = true;

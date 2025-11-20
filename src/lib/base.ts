@@ -1,8 +1,8 @@
-import EventEmitter from 'events';
+import EventEmitter from 'node:events';
 import type { WebSocket } from 'ws';
-import { Version } from './version.js';
-import { Encryption } from './encrypt.js';
+import type { Encryption } from './encrypt.js';
 import type { Header, Message } from './protocol.js';
+import { Version } from './version.js';
 
 export interface Frame<P extends string = string, B = unknown, H extends Header<P> = Header<P>> {
     session: Session;
@@ -14,18 +14,37 @@ export interface Frame<P extends string = string, B = unknown, H extends Header<
     version: Version;
 }
 
-export type Handler<This extends Session, P extends string = string, F extends Frame<P> = Frame<P>> = (
+export type Handler<This extends Session = Session, P extends string = string, F extends Frame<P> = Frame<P>> = (
     this: This,
-    frame: F
+    frame: F,
 ) => boolean | undefined;
 
-export class Session extends EventEmitter {
+export type ExtendEventMap<
+    C extends { new (...args: never[]): unknown },
+    EM extends Record<keyof EM, unknown[]>,
+> = C extends {
+    new (...args: infer Args): infer Inst;
+}
+    ? Inst extends EventEmitter<infer EventMap>
+        ? { new (...args: Args): Inst & EventEmitter<EM & EventMap> }
+        : C
+    : C;
+
+export interface SessionEvents {
+    customFrame: [frame: Frame];
+    disconnect: [session: Session];
+    encryptionEnabled: [session: Session];
+    error: [err: unknown];
+    message: [frame: Frame];
+}
+
+export class Session extends EventEmitter<SessionEvents> {
     socket: WebSocket;
     version: Version;
     encrypted: boolean;
     encryption: Encryption | null;
-    private responserMap: Map<string, Handler<this>>;
-    private handlerMap: Map<string, Handler<this>>;
+    private responserMap: Map<string, Handler>;
+    private handlerMap: Map<string, Handler>;
 
     constructor(socket: WebSocket, version?: Version) {
         super();
@@ -57,10 +76,10 @@ export class Session extends EventEmitter {
                     body,
                     purpose,
                     requestId,
-                    version
+                    version,
                 };
             } catch (err) {
-                this.emit('error', err as Error);
+                this.emit('error', err);
                 return;
             }
             this.emit('message', frame);
@@ -70,7 +89,7 @@ export class Session extends EventEmitter {
                 try {
                     ret = responser.call(this, frame);
                 } catch (err) {
-                    this.emit('error', err as Error);
+                    this.emit('error', err);
                 }
                 if (typeof ret === 'boolean') {
                     if (ret) {
@@ -85,7 +104,7 @@ export class Session extends EventEmitter {
                 try {
                     ret = handler.call(this, frame);
                 } catch (err) {
-                    this.emit('error', err as Error);
+                    this.emit('error', err);
                 }
                 if (typeof ret === 'boolean') {
                     if (ret) {
@@ -119,10 +138,10 @@ export class Session extends EventEmitter {
                 version: this.version,
                 requestId: requestId ?? '00000000-0000-0000-0000-000000000000',
                 messagePurpose: purpose,
-                ...extraHeaders
+                ...extraHeaders,
             },
-            body
-        } as Message);
+            body,
+        } satisfies Message);
     }
 
     hasResponser(requestId: string) {
@@ -136,7 +155,7 @@ export class Session extends EventEmitter {
         if (this.responserMap.has(requestId)) {
             throw new Error(`Cannot attach responser to request: ${requestId}`);
         }
-        this.responserMap.set(requestId, responser as Handler<this>);
+        this.responserMap.set(requestId, responser as Handler);
     }
 
     clearResponser(requestId: string) {
@@ -154,7 +173,7 @@ export class Session extends EventEmitter {
         if (this.handlerMap.has(purpose)) {
             throw new Error(`Cannot attach handler to purpose: ${purpose}`);
         }
-        this.handlerMap.set(purpose, handler as Handler<this>);
+        this.handlerMap.set(purpose, handler as Handler);
     }
 
     clearHandler(purpose: string) {
@@ -168,59 +187,3 @@ export class Session extends EventEmitter {
         }
     }
 }
-
-/*
-Quick replacement for event listeners
-- From:
-\s*(\w+):\s*(\((.+)\)\s*=>\s*.+?);
-- To:
-on(eventName: '$1', listener: $2): this;
-once(eventName: '$1', listener: $2): this;
-off(eventName: '$1', listener: $2): this;
-addListener(eventName: '$1', listener: $2): this;
-removeListener(eventName: '$1', listener: $2): this;
-emit(eventName: '$1', $3): boolean;
-*/
-
-export interface SessionEventMap {
-    customFrame: (frame: Frame) => void;
-    disconnect: (session: this) => void;
-    encryptionEnabled: (session: this) => void;
-    error: (err: Error) => void;
-    message: (frame: Frame) => void;
-}
-
-/* eslint-disable */
-export interface Session extends EventEmitter {
-    on(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    once(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    off(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    addListener(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    removeListener(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    emit(eventName: 'customFrame', frame: Frame): boolean;
-    on(eventName: 'disconnect', listener: (session: this) => void): this;
-    once(eventName: 'disconnect', listener: (session: this) => void): this;
-    off(eventName: 'disconnect', listener: (session: this) => void): this;
-    addListener(eventName: 'disconnect', listener: (session: this) => void): this;
-    removeListener(eventName: 'disconnect', listener: (session: this) => void): this;
-    emit(eventName: 'disconnect', session: this): boolean;
-    on(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    once(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    off(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    addListener(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    removeListener(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    emit(eventName: 'encryptionEnabled', session: this): boolean;
-    on(eventName: 'error', listener: (err: Error) => void): this;
-    once(eventName: 'error', listener: (err: Error) => void): this;
-    off(eventName: 'error', listener: (err: Error) => void): this;
-    addListener(eventName: 'error', listener: (err: Error) => void): this;
-    removeListener(eventName: 'error', listener: (err: Error) => void): this;
-    emit(eventName: 'error', err: Error): boolean;
-    on(eventName: 'message', listener: (frame: Frame) => void): this;
-    once(eventName: 'message', listener: (frame: Frame) => void): this;
-    off(eventName: 'message', listener: (frame: Frame) => void): this;
-    addListener(eventName: 'message', listener: (frame: Frame) => void): this;
-    removeListener(eventName: 'message', listener: (frame: Frame) => void): this;
-    emit(eventName: 'message', frame: Frame): boolean;
-}
-/* eslint-enable */

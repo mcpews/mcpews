@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
-import { WSServer, WSClient, Version, type ChatEventBody } from './index.js';
+import { type ChatEventBody, type Version, WSClient, WSServer } from './index.js';
 
 function main(destAddress: string, sourcePort: number) {
     if (!destAddress) {
         console.log(
             `Please provide <destination>.
-Usage: mcpewsmitm <destination> [port]`.trim()
+Usage: mcpewsmitm <destination> [port]`.trim(),
         );
         process.exit(1);
     }
@@ -113,4 +113,4 @@ Usage: mcpewsmitm <destination> [port]`.trim()
     });
 }
 
-main(process.argv[2], parseInt(process.argv[3]) || 19135);
+main(process.argv[2], parseInt(process.argv[3], 10) || 19135);

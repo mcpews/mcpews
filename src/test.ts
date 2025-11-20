@@ -1,61 +1,41 @@
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
+import { pEvent } from 'p-event';
+import WebSocket from 'ws';
 import {
-    AgentActionFrame,
-    AgentActionResponseFrame,
-    AppSession,
-    AppSessionConnection,
-    ChatEventFrame,
+    type AgentActionFrame,
+    type AgentActionResponseFrame,
+    type AppSession,
+    type AppSessionConnection,
+    type ChatEventFrame,
     ChatEventFrameType,
-    ChatSubscribeFrame,
-    ChatUnsubscribeFrame,
-    ClientConnection,
-    ClientError,
-    CommandFrame,
-    CommandResponseFrame,
-    DataFrame,
-    DataRequestFrame,
-    EncryptRequest,
+    type ChatSubscribeFrame,
+    type ChatUnsubscribeFrame,
+    type ClientConnection,
+    type ClientError,
+    type CommandFrame,
+    type CommandResponseFrame,
+    type DataFrame,
+    type DataRequestFrame,
     EncryptionMode,
-    EventFrame,
-    LegacyCommandFrame,
+    type EncryptRequest,
+    type EventFrame,
+    type LegacyCommandFrame,
     MinecraftAgentActionType,
     MinecraftDataType,
-    ServerSession,
-    SubscribeFrame,
-    UnsubscribeFrame,
+    type ServerSession,
+    type SubscribeFrame,
+    type UnsubscribeFrame,
     Version,
     WSApp,
     WSClient,
-    WSServer
+    WSServer,
 } from './index.js';
-import WebSocket from 'ws';
-import { pEvent } from 'p-event';
+import { setTimeout } from 'node:timers/promises';
 
 const jest = import.meta.jest;
 
-const delay = <T>(ms: number, value?: T) =>
-    new Promise((resolve) =>
-        setTimeout(() => {
-            resolve(value);
-        }, ms)
-    );
-
-interface Defer<T> {
-    promise: Promise<T>;
-    resolve: (value: T) => void;
-    reject: (error: unknown) => void;
-}
-const defer = <T>() => {
-    const ret: Partial<Defer<T>> = {};
-    ret.promise = new Promise<T>((resolve, reject) => {
-        ret.resolve = resolve;
-        ret.reject = reject;
-    });
-    return ret as Defer<T>;
-};
-
 const jestCallback = <Y extends unknown[] = unknown[], T = unknown, C = void>(f?: (this: C, ...args: Y) => T) => {
-    let defered = defer<[T, Y, C]>();
+    let defered = Promise.withResolvers<[T, Y, C]>();
     let resolved = false;
     const fn = jest.fn(function (this: C, ...args: Y) {
         const result = f ? f.apply(this, args) : undefined;
@@ -77,7 +57,7 @@ const jestCallback = <Y extends unknown[] = unknown[], T = unknown, C = void>(f?
     fnModified.haveBeenCalledWithArguments = async () => (await defered.promise)[1];
     fnModified.haveBeenCalledWithThis = async () => (await defered.promise)[2];
     fnModified.clear = () => {
-        defered = defer<[T, Y, C]>();
+        defered = Promise.withResolvers<[T, Y, C]>();
         resolved = false;
     };
     return fnModified;
@@ -297,12 +277,12 @@ describe('basic server and client', () => {
         // #1 publish event before subscribed
         client.version = Version.V1_1_0;
         client.publishEvent(eventName, expectedFirstEventBody);
-        await delay(100);
+        await setTimeout(100);
         expect(eventListener).toHaveBeenCalledTimes(0);
 
         // #2 publish event after subscribed
         session.subscribeRaw(eventName);
-        await delay(100);
+        await setTimeout(100);
         client.publishEvent(eventName, expectedSecondEventBody);
         const secondEvent = await eventListener.haveBeenCalledWith();
         expect(secondEvent.body).toMatchObject(expectedSecondEventBody);
@@ -310,9 +290,9 @@ describe('basic server and client', () => {
 
         // #3 publish event after unsubscribed
         session.unsubscribeRaw(eventName);
-        await delay(100);
+        await setTimeout(100);
         client.publishEvent(eventName, expectedThirdEventBody);
-        await delay(100);
+        await setTimeout(100);
         expect(eventListener).toHaveBeenCalledTimes(1);
 
         session.off('event', eventListener);
@@ -705,7 +685,7 @@ describe('app server and client', () => {
         const expectedEventBody = { data: 'else' };
 
         const eventPromise = session.waitForEvent(eventName);
-        await delay(100); // wait for subscription
+        await setTimeout(100); // wait for subscription
         client.publishEvent(eventName, expectedEventBody);
 
         const event = await eventPromise;
@@ -718,13 +698,13 @@ describe('app server and client', () => {
 
         const eventListener = jestCallback<[EventFrame]>();
         session.once(eventName, eventListener);
-        await delay(100); // wait for subscription
+        await setTimeout(100); // wait for subscription
         client.publishEvent(eventName, expectedEventBody);
         client.publishEvent(eventName, expectedEventBody);
-        await delay(100); // wait for event publishing
+        await setTimeout(100); // wait for event publishing
 
         const eventPromise = session.waitForEvent(eventName);
-        await delay(100); // wait for subscription
+        await setTimeout(100); // wait for subscription
         client.publishEvent(eventName, expectedEventBody);
         await eventPromise;
         expect(eventListener).toHaveBeenCalledTimes(1);

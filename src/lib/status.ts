@@ -25,5 +25,5 @@ export enum StatusCode {
     CommandStepDone = 131073,
     CommandExecIncomplete = 131074,
     CommandRequestInitiated = 131075,
-    NewCommandVersionAvailable = 131076
+    NewCommandVersionAvailable = 131076,
 }

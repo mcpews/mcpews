@@ -1,23 +1,23 @@
 import { WebSocket } from 'ws';
-import { Version } from './version.js';
-import { type Frame, Session, type SessionEventMap } from './base.js';
+import { type ExtendEventMap, type Frame, Session, type SessionEvents } from './base.js';
 import { ClientEncryption } from './encrypt.js';
 import {
     type ChatEventBody,
-    ChatEventFrameType,
+    type ChatEventFrameType,
     type ChatSubscribeBody,
     type ChatUnsubscribeBody,
     type CommandRequestBody,
     type CommandRequestLegacyBody,
     type DataRequestPurpose,
+    EncryptionMode,
     type EncryptRequestBody,
     type EncryptResponseBody,
-    EncryptionMode,
     type EventSubscriptionBody,
-    MinecraftAgentActionType,
+    type MinecraftAgentActionType,
     RequestPurpose,
-    ResponsePurpose
+    ResponsePurpose,
 } from './protocol.js';
+import { Version } from './version.js';
 
 export type CommandFrameBase = Frame<RequestPurpose.Command, CommandRequestBody>;
 export interface CommandFrame extends CommandFrameBase {
@@ -32,6 +32,13 @@ export interface LegacyCommandFrame extends LegacyCommandFrameBase {
     overload: string;
     input: Record<string, unknown>;
     respond(body: unknown): void;
+    /** @deprecated Not supported */
+    handleEncryptionHandshake(): boolean;
+}
+
+function isCommandFrame(frame: CommandFrameBase | LegacyCommandFrameBase): frame is CommandFrameBase {
+    const body = frame.body;
+    return (body as CommandRequestBody).commandLine !== undefined;
 }
 
 export type EventSubscribeFrameBase = Frame<RequestPurpose.Subscribe, EventSubscriptionBody>;
@@ -60,7 +67,7 @@ export interface ChatSubscribeFrame extends ChatSubscribeFrameBase {
 
 export type ChatUnsubscribeFrameBase = Frame<RequestPurpose.ChatMessageUnsubscribe, ChatUnsubscribeBody>;
 export interface ChatUnsubscribeFrame extends ChatUnsubscribeFrameBase {
-    subscribeRequestId: string;
+    subscribeRequestId?: string;
 }
 
 export type DataRequestFrameBase<T extends string> = Frame<DataRequestPurpose<T>>;
@@ -68,54 +75,67 @@ export interface DataRequestFrame<T extends string> extends DataRequestFrameBase
     respond(body: unknown): void;
 }
 
-export interface EncryptRequest {
+export type EncryptRequestFrameBase = Frame<RequestPurpose.EncryptConnection, EncryptRequestBody>;
+export interface EncryptRequest extends EncryptRequestFrameBase {
     cancel(): void;
 }
 
-export class WSClient extends Session {
+export interface WSClientEvents extends SessionEvents {
+    subscribe: [event: SubscribeFrame];
+    unsubscribe: [event: UnsubscribeFrame];
+    command: [event: CommandFrame];
+    commandLegacy: [event: LegacyCommandFrame];
+    agentAction: [event: AgentActionFrame];
+    chatSubscribe: [event: ChatSubscribeFrame];
+    chatUnsubscribe: [event: ChatUnsubscribeFrame];
+    encryptRequest: [event: EncryptRequest];
+}
+
+export class WSClient extends (Session as ExtendEventMap<typeof Session, WSClientEvents>) {
     private eventListenMap: Map<string, boolean>;
 
     constructor(address: string, version?: Version) {
         super(new WebSocket(address), version);
         this.eventListenMap = new Map();
-        this.setHandler(RequestPurpose.Subscribe, (frame: EventSubscribeFrameBase): undefined => {
+        this.setHandler(RequestPurpose.Subscribe, (frame: EventSubscribeFrameBase) => {
             const { eventName } = frame.body;
             const isEventListening = this.eventListenMap.get(eventName);
             if (!isEventListening) {
                 this.emit('subscribe', {
                     ...frame,
-                    eventName
-                } as SubscribeFrame);
+                    eventName,
+                });
                 this.eventListenMap.set(eventName, true);
             }
+            return false;
         });
-        this.setHandler(RequestPurpose.Unsubscribe, (frame: EventUnsubscribeFrameBase): undefined => {
+        this.setHandler(RequestPurpose.Unsubscribe, (frame: EventUnsubscribeFrameBase) => {
             const { eventName } = frame.body;
             const isEventListening = this.eventListenMap.get(eventName);
             if (isEventListening) {
                 this.emit('unsubscribe', {
                     ...frame,
-                    eventName
-                } as UnsubscribeFrame);
+                    eventName,
+                });
                 this.eventListenMap.set(eventName, false);
             }
+            return false;
         });
-        this.setHandler(RequestPurpose.Command, (frame): undefined => {
-            const { requestId, body } = frame;
+        this.setHandler(RequestPurpose.Command, (frame: CommandFrameBase | LegacyCommandFrameBase) => {
             const respond = (body: unknown) => {
-                this.respondCommand(requestId, body);
+                this.respondCommand(frame.requestId, body);
             };
-            if ((body as CommandRequestBody).commandLine) {
+            if (isCommandFrame(frame)) {
                 const handleEncryptionHandshake = () => this.handleEncryptionHandshake(frame.requestId, commandLine);
-                const { commandLine } = body as CommandRequestBody;
+                const { commandLine } = frame.body;
                 this.emit('command', {
                     ...frame,
                     commandLine,
                     respond,
-                    handleEncryptionHandshake
-                } as CommandFrame);
+                    handleEncryptionHandshake,
+                });
             } else {
-                const { name, overload, input } = body as CommandRequestLegacyBody;
+                const { name, overload, input } = frame.body;
                 this.emit('commandLegacy', {
                     ...frame,
                     commandName: name,
@@ -124,45 +144,47 @@ export class WSClient extends Session {
                     respond,
                     handleEncryptionHandshake: () => {
                         throw new Error('Not supported');
-                    }
-                } as LegacyCommandFrame);
+                    },
+                });
             }
+            return false;
         });
-        this.setHandler(RequestPurpose.AgentAction, (frame): undefined => {
-            const { requestId, body } = frame;
+        this.setHandler(RequestPurpose.AgentAction, (frame: AgentActionFrameBase) => {
             const respondCommand = (body: unknown) => {
-                this.respondCommand(requestId, body);
+                this.respondCommand(frame.requestId, body);
             };
             const respondAgentAction = (action: MinecraftAgentActionType, actionName: string, body: unknown) => {
-                this.respondAgentAction(requestId, action, actionName, body);
+                this.respondAgentAction(frame.requestId, action, actionName, body);
             };
-            const { commandLine } = body as CommandRequestBody;
+            const { commandLine } = frame.body;
             this.emit('agentAction', {
                 ...frame,
                 commandLine,
                 respondCommand,
-                respondAgentAction
-            } as AgentActionFrame);
+                respondAgentAction,
+            });
+            return false;
         });
-        this.setHandler(RequestPurpose.ChatMessageSubscribe, (frame): undefined => {
-            const { sender, receiver, message } = frame.body as ChatSubscribeBody;
+        this.setHandler(RequestPurpose.ChatMessageSubscribe, (frame: ChatSubscribeFrameBase) => {
+            const { sender, receiver, message } = frame.body;
             this.emit('chatSubscribe', {
                 ...frame,
                 sender,
                 receiver,
-                chatMessage: message
-            } as ChatSubscribeFrame);
+                chatMessage: message,
+            });
+            return false;
         });
-        this.setHandler(RequestPurpose.ChatMessageUnsubscribe, (frame): undefined => {
-            const { requestId } = frame.body as ChatUnsubscribeBody;
+        this.setHandler(RequestPurpose.ChatMessageUnsubscribe, (frame: ChatUnsubscribeFrameBase) => {
+            const { requestId } = frame.body;
             this.emit('chatUnsubscribe', {
                 ...frame,
-                subscribeRequestId: requestId
-            } as ChatUnsubscribeFrame);
+                subscribeRequestId: requestId,
+            });
+            return false;
         });
-        this.setHandler(RequestPurpose.EncryptConnection, (frame): undefined => {
-            const { requestId, body } = frame;
-            const { mode, publicKey, salt } = body as EncryptRequestBody;
+        this.setHandler(RequestPurpose.EncryptConnection, (frame: EncryptRequestFrameBase) => {
+            const { mode, publicKey, salt } = frame.body;
             let cancelled: true | undefined;
             let completed: true | undefined;
             const cancel = () => {
@@ -171,14 +193,17 @@ export class WSClient extends Session {
                 }
                 cancelled = true;
             };
-            const event = { cancel } as EncryptRequest;
-            this.emit('encryptRequest', event);
+            this.emit('encryptRequest', {
+                ...frame,
+                cancel,
+            });
             if (!cancelled) {
                 const keyExchangeResult = this.handleKeyExchange(mode as EncryptionMode, publicKey, salt);
-                this.sendEncryptResponse(requestId, keyExchangeResult.publicKey);
+                this.sendEncryptResponse(frame.requestId, keyExchangeResult.publicKey);
                 keyExchangeResult.complete();
                 completed = true;
             }
+            return false;
         });
     }
 
@@ -190,7 +215,7 @@ export class WSClient extends Session {
             publicKey: keyExchangeParams.publicKey,
             complete: () => {
                 this.setEncryption(encryption);
-            }
+            },
         };
     }
 
@@ -201,11 +226,11 @@ export class WSClient extends Session {
             const keyExchangeResult = this.handleKeyExchange(
                 mode,
                 JSON.parse(args[1]) as string,
-                JSON.parse(args[2]) as string
+                JSON.parse(args[2]) as string,
             );
             this.respondCommand(requestId, {
                 publicKey: keyExchangeResult.publicKey,
-                statusCode: 0
+                statusCode: 0,
             });
             keyExchangeResult.complete();
             return true;
@@ -218,9 +243,9 @@ export class WSClient extends Session {
             ResponsePurpose.Error,
             {
                 statusCode,
-                statusMessage
+                statusMessage,
             },
-            requestId
+            requestId,
         );
     }
 
@@ -230,7 +255,7 @@ export class WSClient extends Session {
         } else {
             this.sendFrame(ResponsePurpose.Event, {
                 ...body,
-                eventName
+                eventName,
             });
         }
     }
@@ -251,7 +276,11 @@ export class WSClient extends Session {
     }
 
     sendChat(requestId: string, type: ChatEventFrameType, sender: string, receiver: string, message: string) {
-        this.sendFrame(ResponsePurpose.ChatMessage, { type, sender, receiver, message } as ChatEventBody, requestId);
+        this.sendFrame(
+            ResponsePurpose.ChatMessage,
+            { type, sender, receiver, message } satisfies ChatEventBody,
+            requestId,
+        );
     }
 
     setDataResponser<T extends string = string>(dataType: T, responser: (frame: DataRequestFrame<T>) => void) {
@@ -261,7 +290,7 @@ export class WSClient extends Session {
             };
             responser({
                 ...frame,
-                respond
+                respond,
             });
             return true;
         });
@@ -276,106 +305,14 @@ export class WSClient extends Session {
     }
 
     sendEncryptResponse(requestId: string, publicKey: string, body?: Record<string, unknown>) {
-        this.sendFrame(ResponsePurpose.EncryptConnection, { ...body, publicKey } as EncryptResponseBody, requestId);
+        this.sendFrame(
+            ResponsePurpose.EncryptConnection,
+            { ...body, publicKey } satisfies EncryptResponseBody,
+            requestId,
+        );
     }
 
     disconnect() {
         this.socket.close();
     }
 }
-
-export interface WSClientEventMap extends SessionEventMap {
-    subscribe: (event: SubscribeFrame) => void;
-    unsubscribe: (event: UnsubscribeFrame) => void;
-    command: (event: CommandFrame) => void;
-    commandLegacy: (event: LegacyCommandFrame) => void;
-    agentAction: (event: AgentActionFrame) => void;
-    chatSubscribe: (event: ChatSubscribeFrame) => void;
-    chatUnsubscribe: (event: ChatUnsubscribeFrame) => void;
-    encryptRequest: (event: EncryptRequest) => void;
-}
-
-/* eslint-disable */
-export interface WSClient {
-    on(eventName: 'subscribe', listener: (event: SubscribeFrame) => void): this;
-    once(eventName: 'subscribe', listener: (event: SubscribeFrame) => void): this;
-    off(eventName: 'subscribe', listener: (event: SubscribeFrame) => void): this;
-    addListener(eventName: 'subscribe', listener: (event: SubscribeFrame) => void): this;
-    removeListener(eventName: 'subscribe', listener: (event: SubscribeFrame) => void): this;
-    emit(eventName: 'subscribe', event: SubscribeFrame): boolean;
-    on(eventName: 'unsubscribe', listener: (event: UnsubscribeFrame) => void): this;
-    once(eventName: 'unsubscribe', listener: (event: UnsubscribeFrame) => void): this;
-    off(eventName: 'unsubscribe', listener: (event: UnsubscribeFrame) => void): this;
-    addListener(eventName: 'unsubscribe', listener: (event: UnsubscribeFrame) => void): this;
-    removeListener(eventName: 'unsubscribe', listener: (event: UnsubscribeFrame) => void): this;
-    emit(eventName: 'unsubscribe', event: UnsubscribeFrame): boolean;
-    on(eventName: 'command', listener: (event: CommandFrame) => void): this;
-    once(eventName: 'command', listener: (event: CommandFrame) => void): this;
-    off(eventName: 'command', listener: (event: CommandFrame) => void): this;
-    addListener(eventName: 'command', listener: (event: CommandFrame) => void): this;
-    removeListener(eventName: 'command', listener: (event: CommandFrame) => void): this;
-    emit(eventName: 'command', event: CommandFrame): boolean;
-    on(eventName: 'commandLegacy', listener: (event: LegacyCommandFrame) => void): this;
-    once(eventName: 'commandLegacy', listener: (event: LegacyCommandFrame) => void): this;
-    off(eventName: 'commandLegacy', listener: (event: LegacyCommandFrame) => void): this;
-    addListener(eventName: 'commandLegacy', listener: (event: LegacyCommandFrame) => void): this;
-    removeListener(eventName: 'commandLegacy', listener: (event: LegacyCommandFrame) => void): this;
-    emit(eventName: 'commandLegacy', event: LegacyCommandFrame): boolean;
-    on(eventName: 'agentAction', listener: (event: AgentActionFrame) => void): this;
-    once(eventName: 'agentAction', listener: (event: AgentActionFrame) => void): this;
-    off(eventName: 'agentAction', listener: (event: AgentActionFrame) => void): this;
-    addListener(eventName: 'agentAction', listener: (event: AgentActionFrame) => void): this;
-    removeListener(eventName: 'agentAction', listener: (event: AgentActionFrame) => void): this;
-    emit(eventName: 'agentAction', event: AgentActionFrame): boolean;
-    on(eventName: 'chatSubscribe', listener: (event: ChatSubscribeFrame) => void): this;
-    once(eventName: 'chatSubscribe', listener: (event: ChatSubscribeFrame) => void): this;
-    off(eventName: 'chatSubscribe', listener: (event: ChatSubscribeFrame) => void): this;
-    addListener(eventName: 'chatSubscribe', listener: (event: ChatSubscribeFrame) => void): this;
-    removeListener(eventName: 'chatSubscribe', listener: (event: ChatSubscribeFrame) => void): this;
-    emit(eventName: 'chatSubscribe', event: ChatSubscribeFrame): boolean;
-    on(eventName: 'chatUnsubscribe', listener: (event: ChatUnsubscribeFrame) => void): this;
-    once(eventName: 'chatUnsubscribe', listener: (event: ChatUnsubscribeFrame) => void): this;
-    off(eventName: 'chatUnsubscribe', listener: (event: ChatUnsubscribeFrame) => void): this;
-    addListener(eventName: 'chatUnsubscribe', listener: (event: ChatUnsubscribeFrame) => void): this;
-    removeListener(eventName: 'chatUnsubscribe', listener: (event: ChatUnsubscribeFrame) => void): this;
-    emit(eventName: 'chatUnsubscribe', event: ChatUnsubscribeFrame): boolean;
-    on(eventName: 'encryptRequest', listener: (event: EncryptRequest) => void): this;
-    once(eventName: 'encryptRequest', listener: (event: EncryptRequest) => void): this;
-    off(eventName: 'encryptRequest', listener: (event: EncryptRequest) => void): this;
-    addListener(eventName: 'encryptRequest', listener: (event: EncryptRequest) => void): this;
-    removeListener(eventName: 'encryptRequest', listener: (event: EncryptRequest) => void): this;
-    emit(eventName: 'encryptRequest', event: EncryptRequest): boolean;
-
-    // Inherit from Session
-    on(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    once(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    off(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    addListener(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    removeListener(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    emit(eventName: 'customFrame', frame: Frame): boolean;
-    on(eventName: 'disconnect', listener: (session: this) => void): this;
-    once(eventName: 'disconnect', listener: (session: this) => void): this;
-    off(eventName: 'disconnect', listener: (session: this) => void): this;
-    addListener(eventName: 'disconnect', listener: (session: this) => void): this;
-    removeListener(eventName: 'disconnect', listener: (session: this) => void): this;
-    emit(eventName: 'disconnect', session: this): boolean;
-    on(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    once(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    off(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    addListener(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    removeListener(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    emit(eventName: 'encryptionEnabled', session: this): boolean;
-    on(eventName: 'error', listener: (err: Error) => void): this;
-    once(eventName: 'error', listener: (err: Error) => void): this;
-    off(eventName: 'error', listener: (err: Error) => void): this;
-    addListener(eventName: 'error', listener: (err: Error) => void): this;
-    removeListener(eventName: 'error', listener: (err: Error) => void): this;
-    emit(eventName: 'error', err: Error): boolean;
-    on(eventName: 'message', listener: (frame: Frame) => void): this;
-    once(eventName: 'message', listener: (frame: Frame) => void): this;
-    off(eventName: 'message', listener: (frame: Frame) => void): this;
-    addListener(eventName: 'message', listener: (frame: Frame) => void): this;
-    removeListener(eventName: 'message', listener: (frame: Frame) => void): this;
-    emit(eventName: 'message', frame: Frame): boolean;
-}
-/* eslint-enable */

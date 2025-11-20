@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-duplicate-enum-values */
 export enum Version {
     V0_0_1 = 0x1,
     V0_0_2 = 0x2,
@@ -8,7 +7,7 @@ export enum Version {
     V1_1_0 = 0x1010000,
     V1_2_0 = 0x1020000,
     V1_3_0 = 0x1030000,
-    V1_4_0 = 0x1040000
+    V1_4_0 = 0x1040000,
 }
 
 export enum MinecraftCommandVersion {
@@ -78,5 +77,5 @@ export enum MinecraftCommandVersion {
     V1_20_70 = 0x26,
     V1_21_0 = 0x27,
     V1_21_10 = 0x28,
-    V1_21_20 = 0x2a
+    V1_21_20 = 0x2a,
 }

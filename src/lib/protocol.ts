@@ -1,4 +1,4 @@
-import { MinecraftCommandVersion, Version } from './version.js';
+import type { MinecraftCommandVersion, Version } from './version.js';
 
 export interface Message<B = unknown, H extends Header = Header> {
     header: H;
@@ -13,7 +13,7 @@ export interface Header<Purpose extends string = string> {
     [key: string]: unknown;
 }
 
-export const enum RequestPurpose {
+export enum RequestPurpose {
     Command = 'commandRequest',
     Subscribe = 'subscribe',
     Unsubscribe = 'unsubscribe',
@@ -23,19 +23,19 @@ export const enum RequestPurpose {
     DataRequestBlock = 'data:block',
     DataRequestItem = 'data:item',
     DataRequestMob = 'data:mob',
-    EncryptConnection = 'ws:encrypt'
+    EncryptConnection = 'ws:encrypt',
 }
 
 export type DataRequestPurpose<T extends string> = `data:${T}`;
 
-export const enum ResponsePurpose {
+export enum ResponsePurpose {
     Command = 'commandResponse',
     Error = 'error',
     Event = 'event',
     AgentAction = 'action:agent',
     ChatMessage = 'chat',
     Data = 'data',
-    EncryptConnection = 'ws:encrypt'
+    EncryptConnection = 'ws:encrypt',
 }
 
 export type EventResponsePurposes = ResponsePurpose.Event | ResponsePurpose.ChatMessage;
@@ -71,7 +71,7 @@ export enum EncryptionMode {
     Aes256cfb8 = 'cfb8',
     Aes256cfb = 'cfb',
     /** @deprecated Alias of Aes256cfb */
-    Aes256cfb128 = 'cfb128'
+    Aes256cfb128 = 'cfb128',
 }
 
 export interface EncryptRequestBody {
@@ -119,7 +119,7 @@ export enum MinecraftAgentActionType {
     PlaceBlock,
     Till,
     TransferItemTo,
-    Turn
+    Turn,
 }
 
 export interface MinecraftAgentActionResponseHeader extends Header<ResponsePurpose.AgentAction> {
@@ -132,7 +132,7 @@ export enum ChatEventFrameType {
     Tell = 'tell',
     Say = 'say',
     Me = 'me',
-    Title = 'title'
+    Title = 'title',
     // To be filled
 }
 
@@ -146,7 +146,7 @@ export interface ChatEventBody extends EventBody {
 export enum MinecraftDataType {
     Block = 'block',
     Item = 'item',
-    Mob = 'mob'
+    Mob = 'mob',
 }
 
 export interface MinecraftBlockData {

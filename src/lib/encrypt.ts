@@ -1,4 +1,13 @@
-import crypto from 'crypto';
+import {
+    type Cipheriv,
+    createCipheriv,
+    createDecipheriv,
+    createECDH,
+    createHash,
+    type Decipheriv,
+    type ECDH,
+    randomBytes,
+} from 'node:crypto';
 import { EncryptionMode } from './protocol.js';
 
 const ecdhCurve = 'secp384r1';
@@ -6,7 +15,7 @@ const blockSize = 16;
 const cipherAlgorithms = {
     [EncryptionMode.Aes256cfb8]: 'aes-256-cfb8',
     [EncryptionMode.Aes256cfb]: 'aes-256-cfb',
-    [EncryptionMode.Aes256cfb128]: 'aes-256-cfb'
+    [EncryptionMode.Aes256cfb128]: 'aes-256-cfb',
 };
 const hashAlgorithm = 'sha256';
 
@@ -19,19 +28,19 @@ function asNodejsPubKey(pubKeyBuffer: Buffer) {
 }
 
 function hashBuffer(algorithm: string, buffer: Buffer) {
-    const hash = crypto.createHash(algorithm);
+    const hash = createHash(algorithm);
     hash.update(buffer);
     return hash.digest();
 }
 
 export class Encryption {
-    ecdh: crypto.ECDH;
+    ecdh: ECDH;
     pubKey: Buffer;
-    cipher: crypto.Cipher | null;
-    decipher: crypto.Decipher | null;
+    cipher: Cipheriv | null;
+    decipher: Decipheriv | null;
 
     constructor() {
-        this.ecdh = crypto.createECDH(ecdhCurve);
+        this.ecdh = createECDH(ecdhCurve);
         this.pubKey = this.ecdh.generateKeys();
         this.cipher = null;
         this.decipher = null;
@@ -41,8 +50,8 @@ export class Encryption {
         const key = hashBuffer(hashAlgorithm, Buffer.concat([salt, secretKey]));
         const initialVector = key.subarray(0, blockSize);
         const cipherAlgorithm = cipherAlgorithms[mode];
-        this.cipher = crypto.createCipheriv(cipherAlgorithm, key, initialVector);
-        this.decipher = crypto.createDecipheriv(cipherAlgorithm, key, initialVector);
+        this.cipher = createCipheriv(cipherAlgorithm, key, initialVector);
+        this.decipher = createDecipheriv(cipherAlgorithm, key, initialVector);
         this.cipher.setAutoPadding(false);
         this.decipher.setAutoPadding(false);
     }
@@ -63,13 +72,13 @@ export class ServerEncryption extends Encryption {
 
     constructor() {
         super();
-        this.salt = crypto.randomBytes(blockSize);
+        this.salt = randomBytes(blockSize);
     }
 
     beginKeyExchange() {
         return {
             publicKey: asOpenSSLPubKey(this.pubKey).toString('base64'),
-            salt: this.salt.toString('base64')
+            salt: this.salt.toString('base64'),
         };
     }
 
@@ -82,7 +91,7 @@ export class ServerEncryption extends Encryption {
 export class ClientEncryption extends Encryption {
     beginKeyExchange() {
         return {
-            publicKey: asOpenSSLPubKey(this.pubKey).toString('base64')
+            publicKey: asOpenSSLPubKey(this.pubKey).toString('base64'),
         };
     }
 

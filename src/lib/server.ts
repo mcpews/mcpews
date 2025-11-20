@@ -1,36 +1,37 @@
-import { WebSocket, WebSocketServer } from 'ws';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
+import EventEmitter from 'node:events';
+import type { IncomingMessage } from 'node:http';
+import type { Duplex } from 'node:stream';
+import { type WebSocket, WebSocketServer } from 'ws';
+import { type ExtendEventMap, type Frame, Session, type SessionEvents } from './base.js';
 import { implementName, ServerEncryption } from './encrypt.js';
-import { MinecraftCommandVersion, Version } from './version.js';
-import { type Frame, Session, type SessionEventMap } from './base.js';
-import { IncomingMessage } from 'http';
-import { Duplex } from 'stream';
 import {
     type ChatEventBody,
-    ChatEventFrameType,
+    type ChatEventFrameType,
     type ChatSubscribeBody,
     type ChatUnsubscribeBody,
     type CommandRequestBody,
     type CommandRequestLegacyBody,
     type CommandResponseBody,
     type DataFrameHeader,
+    EncryptionMode,
     type EncryptRequestBody,
     type EncryptResponseBody,
-    EncryptionMode,
     type ErrorBody,
     type EventBody,
     type EventHeader,
     type EventResponsePurposes,
     type EventSubscriptionBody,
     type MinecraftAgentActionResponseHeader,
-    MinecraftAgentActionType,
+    type MinecraftAgentActionType,
     type MinecraftBlockData,
-    MinecraftDataType,
+    type MinecraftDataType,
     type MinecraftItemData,
     type MinecraftMobData,
     RequestPurpose,
-    ResponsePurpose
+    ResponsePurpose,
 } from './protocol.js';
+import { MinecraftCommandVersion, Version } from './version.js';
 
 export type CommandResponseFrame<B extends CommandResponseBody = CommandResponseBody> = Frame<
     ResponsePurpose.Command,
@@ -98,7 +99,13 @@ type EncryptResponseFrameBaseLegacy = Frame<ResponsePurpose.Command, EncryptResp
 type SemVer = string | [number, number, number];
 export type CommandVersion = MinecraftCommandVersion | SemVer;
 
-export class ServerSession extends Session {
+export interface ServerSessionEvents extends SessionEvents {
+    event: [frame: EventFrame];
+    commandResponse: [frame: CommandResponseFrame];
+    clientError: [error: ClientError];
+}
+
+export class ServerSession extends (Session as ExtendEventMap<typeof Session, ServerSessionEvents>) {
     server: WSServer;
     exchangingKey: boolean;
     private eventListeners: Map<string, Set<(frame: EventFrame) => void>>;
@@ -116,17 +123,16 @@ export class ServerSession extends Session {
                 const listeners = this.eventListeners.get(eventName);
                 const eventFrame = {
                     ...frame,
-                    eventName
+                    eventName,
                 } as EventFrame;
                 if (listeners) {
-                    const listenersCopy = new Set(listeners);
-                    listenersCopy.forEach((e) => {
+                    for (const listener of [...listeners]) {
                         try {
-                            e.call(this, eventFrame);
+                            listener.call(this, eventFrame);
                         } catch (err) {
                             this.emit('error', err as Error);
                         }
-                    });
+                    }
                 } else {
                     this.emit('event', eventFrame);
                 }
@@ -175,7 +181,7 @@ export class ServerSession extends Session {
                     'enableencryption',
                     JSON.stringify(keyExchangeParams.publicKey),
                     JSON.stringify(keyExchangeParams.salt),
-                    mode
+                    mode,
                 ],
                 (frame) => {
                     const frameBase = frame as EncryptResponseFrameBaseLegacy;
@@ -183,7 +189,7 @@ export class ServerSession extends Session {
                     encryption.completeKeyExchange(mode, frameBase.body.publicKey);
                     this.setEncryption(encryption);
                     if (callback) callback.call(this, this);
-                }
+                },
             );
         }
         return true;
@@ -226,16 +232,16 @@ export class ServerSession extends Session {
                 version: version ?? MinecraftCommandVersion.Initial,
                 commandLine: Array.isArray(command) ? command.join(' ') : command,
                 origin: {
-                    type: 'player'
-                }
+                    type: 'player',
+                },
             } as CommandRequestBody,
-            requestId
+            requestId,
         );
     }
 
     sendCommand<B extends CommandResponseBody = CommandResponseBody>(
         command: string | string[],
-        callback?: (frame: CommandResponseFrame<B>) => void
+        callback?: (frame: CommandResponseFrame<B>) => void,
     ) {
         const requestId = randomUUID();
         if (callback) {
@@ -258,9 +264,9 @@ export class ServerSession extends Session {
                 name: commandName,
                 overload,
                 input,
-                origin: { type: 'player' }
+                origin: { type: 'player' },
             } as CommandRequestLegacyBody,
-            requestId
+            requestId,
         );
     }
 
@@ -268,7 +274,7 @@ export class ServerSession extends Session {
         commandName: string,
         overload: string,
         input: Record<string, unknown>,
-        callback?: (frame: CommandResponseFrame<B>) => void
+        callback?: (frame: CommandResponseFrame<B>) => void,
     ) {
         const requestId = randomUUID();
         if (callback) {
@@ -288,9 +294,9 @@ export class ServerSession extends Session {
             RequestPurpose.AgentAction,
             {
                 version: version ?? MinecraftCommandVersion.Initial,
-                commandLine: Array.isArray(agentCommand) ? agentCommand.join(' ') : agentCommand
+                commandLine: Array.isArray(agentCommand) ? agentCommand.join(' ') : agentCommand,
             } as CommandRequestBody,
-            requestId
+            requestId,
         );
     }
 
@@ -309,7 +315,7 @@ export class ServerSession extends Session {
                         ...frame,
                         action,
                         actionName,
-                        commandResponse
+                        commandResponse,
                     } as AgentActionResponseFrame<B>;
                     callback.call(this, agentActionFrame);
                     return true;
@@ -328,7 +334,7 @@ export class ServerSession extends Session {
         this.sendFrame(
             RequestPurpose.ChatMessageSubscribe,
             { sender, receiver, message } as ChatSubscribeBody,
-            requestId
+            requestId,
         );
     }
 
@@ -336,7 +342,7 @@ export class ServerSession extends Session {
         sender?: string | null,
         receiver?: string | null,
         message?: string | null,
-        callback?: (frame: ChatEventFrame) => void
+        callback?: (frame: ChatEventFrame) => void,
     ) {
         const requestId = randomUUID();
         if (callback) {
@@ -351,7 +357,7 @@ export class ServerSession extends Session {
                         sender,
                         receiver,
                         chatMessage,
-                        chatType
+                        chatType,
                     } as ChatEventFrame;
                     callback.call(this, chatFrame);
                 }
@@ -375,7 +381,9 @@ export class ServerSession extends Session {
 
     unsubscribeChatAll() {
         this.unsubscribeChatRaw();
-        this.chatResponsers.forEach((requestId) => this.clearResponser(requestId));
+        for (const requestId of this.chatResponsers) {
+            this.clearResponser(requestId);
+        }
         this.chatResponsers.clear();
     }
 
@@ -385,23 +393,23 @@ export class ServerSession extends Session {
 
     fetchData(
         dataType: MinecraftDataType.Block,
-        callback?: (frame: DataFrame<MinecraftDataType.Block, MinecraftBlockData[]>) => void
+        callback?: (frame: DataFrame<MinecraftDataType.Block, MinecraftBlockData[]>) => void,
     ): string;
     fetchData(
         dataType: MinecraftDataType.Item,
-        callback?: (frame: DataFrame<MinecraftDataType.Item, MinecraftItemData[]>) => void
+        callback?: (frame: DataFrame<MinecraftDataType.Item, MinecraftItemData[]>) => void,
     ): string;
     fetchData(
         dataType: MinecraftDataType.Mob,
-        callback?: (frame: DataFrame<MinecraftDataType.Mob, MinecraftMobData[]>) => void
+        callback?: (frame: DataFrame<MinecraftDataType.Mob, MinecraftMobData[]>) => void,
     ): string;
     fetchData<Name extends string, ReturnType>(
         dataType: Name,
-        callback?: (frame: DataFrame<Name, ReturnType>) => void
+        callback?: (frame: DataFrame<Name, ReturnType>) => void,
     ): string;
     fetchData<Name extends string, ReturnType>(
         dataType: Name,
-        callback?: (frame: DataFrame<Name, ReturnType>) => void
+        callback?: (frame: DataFrame<Name, ReturnType>) => void,
     ) {
         const requestId = randomUUID();
         if (callback) {
@@ -410,7 +418,7 @@ export class ServerSession extends Session {
                     const frameBase = frame as DataFrameBase;
                     const dataFrame = {
                         ...frameBase,
-                        dataType: frameBase.header.dataType
+                        dataType: frameBase.header.dataType,
                     } as DataFrame<Name, ReturnType>;
                     callback.call(this, dataFrame);
                     return true;
@@ -434,67 +442,6 @@ export class ServerSession extends Session {
     }
 }
 
-export interface ServerSessionEventMap extends SessionEventMap {
-    event: (frame: EventFrame) => void;
-    commandResponse: (frame: CommandResponseFrame) => void;
-    clientError: (error: ClientError) => void;
-}
-
-/* eslint-disable */
-export interface ServerSession {
-    on(eventName: 'event', listener: (frame: EventFrame) => void): this;
-    once(eventName: 'event', listener: (frame: EventFrame) => void): this;
-    off(eventName: 'event', listener: (frame: EventFrame) => void): this;
-    addListener(eventName: 'event', listener: (frame: EventFrame) => void): this;
-    removeListener(eventName: 'event', listener: (frame: EventFrame) => void): this;
-    emit(eventName: 'event', frame: EventFrame): boolean;
-    on(eventName: 'commandResponse', listener: (frame: CommandResponseFrame) => void): this;
-    once(eventName: 'commandResponse', listener: (frame: CommandResponseFrame) => void): this;
-    off(eventName: 'commandResponse', listener: (frame: CommandResponseFrame) => void): this;
-    addListener(eventName: 'commandResponse', listener: (frame: CommandResponseFrame) => void): this;
-    removeListener(eventName: 'commandResponse', listener: (frame: CommandResponseFrame) => void): this;
-    emit(eventName: 'commandResponse', frame: CommandResponseFrame): boolean;
-    on(eventName: 'clientError', listener: (error: ClientError) => void): this;
-    once(eventName: 'clientError', listener: (error: ClientError) => void): this;
-    off(eventName: 'clientError', listener: (error: ClientError) => void): this;
-    addListener(eventName: 'clientError', listener: (error: ClientError) => void): this;
-    removeListener(eventName: 'clientError', listener: (error: ClientError) => void): this;
-    emit(eventName: 'clientError', error: ClientError): boolean;
-
-    // Inherit from Session
-    on(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    once(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    off(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    addListener(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    removeListener(eventName: 'customFrame', listener: (frame: Frame) => void): this;
-    emit(eventName: 'customFrame', frame: Frame): boolean;
-    on(eventName: 'disconnect', listener: (session: this) => void): this;
-    once(eventName: 'disconnect', listener: (session: this) => void): this;
-    off(eventName: 'disconnect', listener: (session: this) => void): this;
-    addListener(eventName: 'disconnect', listener: (session: this) => void): this;
-    removeListener(eventName: 'disconnect', listener: (session: this) => void): this;
-    emit(eventName: 'disconnect', session: this): boolean;
-    on(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    once(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    off(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    addListener(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    removeListener(eventName: 'encryptionEnabled', listener: (session: this) => void): this;
-    emit(eventName: 'encryptionEnabled', session: this): boolean;
-    on(eventName: 'error', listener: (err: Error) => void): this;
-    once(eventName: 'error', listener: (err: Error) => void): this;
-    off(eventName: 'error', listener: (err: Error) => void): this;
-    addListener(eventName: 'error', listener: (err: Error) => void): this;
-    removeListener(eventName: 'error', listener: (err: Error) => void): this;
-    emit(eventName: 'error', err: Error): boolean;
-    on(eventName: 'message', listener: (frame: Frame) => void): this;
-    once(eventName: 'message', listener: (frame: Frame) => void): this;
-    off(eventName: 'message', listener: (frame: Frame) => void): this;
-    addListener(eventName: 'message', listener: (frame: Frame) => void): this;
-    removeListener(eventName: 'message', listener: (frame: Frame) => void): this;
-    emit(eventName: 'message', frame: Frame): boolean;
-}
-/* eslint-enable */
-
 export interface ClientConnection {
     server: WSServer;
     session: ServerSession;
@@ -515,32 +462,16 @@ interface WebSocketServerInternal extends WebSocketServer {
         req: IncomingMessage,
         socket: Duplex,
         head: Buffer,
-        cb: (client: WebSocket, request: IncomingMessage) => void
+        cb: (client: WebSocket, request: IncomingMessage) => void,
     ): void;
 }
 
-export class WSServer extends WebSocketServer {
-    protected sessions: Set<ServerSession>;
-    version: Version;
-
-    constructor(port: number, handleClient?: (client: ClientConnection) => void) {
+class MinecraftWebSocketServer extends WebSocketServer {
+    constructor(port: number) {
         super({
             port,
-            handleProtocols: (protocols) => (protocols.has(implementName) ? implementName : false)
+            handleProtocols: (protocols) => (protocols.has(implementName) ? implementName : false),
         });
-        this.sessions = new Set();
-        this.version = Version.V0_0_1;
-        (this as WebSocketServer).on('connection', (socket: WebSocket, request: IncomingMessage) => {
-            const session = new ServerSession(this, socket);
-            this.sessions.add(session);
-            this.emit('client', { server: this, session, request });
-            socket.on('close', () => {
-                this.sessions.delete(session);
-            });
-        });
-        if (handleClient) {
-            this.on('client', handleClient);
-        }
     }
 
     // overwrite handleUpgrade to skip sec-websocket-key format test
@@ -549,7 +480,7 @@ export class WSServer extends WebSocketServer {
         request: IncomingMessage,
         socket: Duplex,
         upgradeHead: Buffer,
-        callback: (client: WebSocket, request: IncomingMessage) => void
+        callback: (client: WebSocket, request: IncomingMessage) => void,
     ): void {
         const key = request.headers['sec-websocket-key'];
         if (key && /^[+/0-9A-Za-z]{11}=$/.test(key)) {
@@ -567,7 +498,7 @@ export class WSServer extends WebSocketServer {
         req: IncomingMessage,
         socket: Duplex,
         head: Buffer,
-        cb: (client: WebSocket, request: IncomingMessage) => void
+        cb: (client: WebSocket, request: IncomingMessage) => void,
     ) {
         (WebSocketServer.prototype as WebSocketServerInternal).completeUpgrade.call(
             this,
@@ -577,53 +508,63 @@ export class WSServer extends WebSocketServer {
             req,
             socket,
             head,
-            cb
+            cb,
         );
+    }
+}
+
+export interface WSServerEvents {
+    client: [client: ClientConnection];
+}
+
+export class WSServer extends EventEmitter<WSServerEvents> {
+    server: WebSocketServer;
+    sessions: Set<ServerSession>;
+    version: Version;
+
+    constructor(port: number, handleClient?: (client: ClientConnection) => void) {
+        super();
+        this.server = new MinecraftWebSocketServer(port);
+        this.sessions = new Set();
+        this.version = Version.V0_0_1;
+        this.server.on('connection', (socket, request) => {
+            const session = new ServerSession(this, socket);
+            this.sessions.add(session);
+            this.emit('client', { server: this, session, request });
+            socket.on('close', () => {
+                this.sessions.delete(session);
+            });
+        });
+        if (handleClient) {
+            this.on('client', handleClient);
+        }
     }
 
     broadcastCommand(command: string, callback: (frame: CommandResponseFrame) => void) {
-        this.sessions.forEach((e) => {
-            e.sendCommand(command, callback);
-        });
+        for (const session of this.sessions) {
+            session.sendCommand(command, callback);
+        }
     }
 
     broadcastSubscribe(eventName: string, callback: (frame: EventFrame) => void) {
-        this.sessions.forEach((e) => {
-            e.subscribe(eventName, callback);
-        });
+        for (const session of this.sessions) {
+            session.subscribe(eventName, callback);
+        }
     }
 
     broadcastUnsubscribe(eventName: string, callback: (frame: EventFrame) => void) {
-        this.sessions.forEach((e) => {
-            e.unsubscribe(eventName, callback);
-        });
+        for (const session of this.sessions) {
+            session.unsubscribe(eventName, callback);
+        }
     }
 
     disconnectAll(force?: boolean) {
-        this.sessions.forEach((e) => {
-            e.disconnect(force);
-        });
+        for (const session of this.sessions) {
+            session.disconnect(force);
+        }
+    }
+
+    close(cb?: (err?: Error) => void) {
+        this.server.close(cb);
     }
 }
-
-export interface WSServerEventMap {
-    client: (client: ClientConnection) => void;
-}
-
-/* eslint-disable */
-export interface WSServer {
-    on(eventName: 'client', listener: (client: ClientConnection) => void): this;
-    once(eventName: 'client', listener: (client: ClientConnection) => void): this;
-    off(eventName: 'client', listener: (client: ClientConnection) => void): this;
-    addListener(eventName: 'client', listener: (client: ClientConnection) => void): this;
-    removeListener(eventName: 'client', listener: (client: ClientConnection) => void): this;
-    emit(eventName: 'client', client: ClientConnection): boolean;
-
-    on(event: string | symbol, listener: (...args: any[]) => void): this;
-    once(event: string | symbol, listener: (...args: any[]) => void): this;
-    off(event: string | symbol, listener: (...args: any[]) => void): this;
-    addListener(event: string | symbol, listener: (...args: any[]) => void): this;
-    removeListener(event: string | symbol, listener: (...args: any[]) => void): this;
-    emit(event: string | symbol, ...args: any[]): boolean;
-}
-/* eslint-enable */

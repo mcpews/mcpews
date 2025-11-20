@@ -1,7 +1,7 @@
-import EventEmitter from 'events';
-import { type CommandResponseFrame, type EventFrame, ServerSession, WSServer } from './server.js';
-import { pEvent, type CancelablePromise } from 'p-event';
-import { IncomingMessage } from 'http';
+import EventEmitter from 'node:events';
+import type { IncomingMessage } from 'node:http';
+import { type CancelablePromise, pEvent } from 'p-event';
+import { type CommandResponseFrame, type EventFrame, type ServerSession, WSServer } from './server.js';
 
 const ERRORCODE_MASK = 1 << 31;
 
@@ -101,7 +101,7 @@ export class AppSession {
         const racePromise = Promise.race([errorEventPromise as unknown as Promise<never>, callbackPromise]).finally(
             () => {
                 cancel();
-            }
+            },
         ) as CancelablePromise<CommandResponseFrame>;
         racePromise.cancel = cancel;
         return racePromise;
@@ -124,7 +124,7 @@ export class AppSession {
             errorEventPromise.cancel();
         };
         const racePromise = Promise.race([errorEventPromise as unknown as Promise<never>, callbackPromise]).finally(
-            cancel
+            cancel,
         ) as CancelablePromise<CommandResponseFrame>;
         racePromise.cancel = cancel;
         return racePromise;
@@ -137,7 +137,11 @@ export class AppSession {
     }
 }
 
-export class WSApp extends EventEmitter {
+export interface WSAppEvents {
+    session: [connection: AppSessionConnection];
+}
+
+export class WSApp extends EventEmitter<WSAppEvents> {
     server: WSServer;
     protected sessions: Set<AppSession>;
 
@@ -166,7 +170,7 @@ export class WSApp extends EventEmitter {
     }
 
     waitForSession(timeout?: number) {
-        return pEvent(this, 'session', { timeout });
+        return pEvent<WSAppEvents & Record<string | symbol, unknown[]>, 'session'>(this, 'session', { timeout });
     }
 
     close() {
@@ -178,17 +182,4 @@ export interface AppSessionConnection {
     app: WSApp;
     session: AppSession;
     request: IncomingMessage;
-}
-
-export interface WSAppEventMap {
-    session: (connection: AppSessionConnection) => void;
-}
-
-export interface WSApp {
-    on(eventName: 'session', listener: (connection: AppSessionConnection) => void): this;
-    once(eventName: 'session', listener: (connection: AppSessionConnection) => void): this;
-    off(eventName: 'session', listener: (connection: AppSessionConnection) => void): this;
-    addListener(eventName: 'session', listener: (connection: AppSessionConnection) => void): this;
-    removeListener(eventName: 'session', listener: (connection: AppSessionConnection) => void): this;
-    emit(eventName: 'session', connection: AppSessionConnection): boolean;
 }
