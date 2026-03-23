@@ -1,6 +1,6 @@
 {
     "name": "mcpews",
-    "version": "4.0.2",
+    "version": "4.0.3",
     "description": "A library that supports MCPE Websocket Protocol",
     "type": "module",
     "main": "./dist/index.js",
@@ -10,14 +10,16 @@
         "mcpewsmitm": "./dist/mitm.js"
     },
     "files": [
-        "dist/"
+        "dist/",
+        "!dist/test/",
+        "!*.tsbuildinfo"
     ],
     "scripts": {
-        "clean": "rimraf ./dist",
-        "build": "tsc",
+        "clean": "tsc --build --clean",
+        "build": "tsc --build",
         "lint": "biome check --write",
-        "test": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js",
-        "watch": "tsc --watch --preserveWatchOutput"
+        "test": "vitest run",
+        "watch": "tsc --build --watch --preserveWatchOutput"
     },
     "repository": {
         "type": "git",
@@ -35,18 +37,17 @@
     },
     "homepage": "https://github.com/XeroAlpha/mcpews",
     "dependencies": {
-        "p-event": "^7.0.0",
-        "ws": "^8.18.3"
+        "p-event": "^7.1.0",
+        "ws": "^8.20.0"
     },
     "devDependencies": {
-        "@biomejs/biome": "2.3.6",
-        "@types/jest": "^30.0.0",
-        "@types/node": "^24.10.1",
+        "@biomejs/biome": "2.4.8",
+        "@types/node": "^25.5.0",
         "@types/ws": "^8.18.1",
-        "jest": "^30.2.0",
-        "rimraf": "^6.1.2",
-        "ts-jest": "^29.4.5",
-        "typedoc": "^0.28.14",
-        "typescript": "^5.9.3"
+        "@vitest/coverage-v8": "^4.1.0",
+        "get-port": "^7.2.0",
+        "typedoc": "^0.28.18",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.0"
     }
 }

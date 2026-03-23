@@ -1,0 +1,25 @@
+{
+    "compilerOptions": {
+        "moduleResolution": "NodeNext",
+        "module": "NodeNext",
+        "target": "ES2024",
+        "lib": ["ES2024"],
+        "skipLibCheck": true,
+        "allowJs": true,
+        "composite": true,
+        "declaration": true,
+        "sourceMap": true,
+        "strict": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "strictBindCallApply": true,
+        "strictPropertyInitialization": true,
+        "verbatimModuleSyntax": true,
+        "isolatedModules": true,
+        "esModuleInterop": true,
+        "rootDir": "./src",
+        "outDir": "./dist",
+        "declarationDir": "./dist"
+    }
+}

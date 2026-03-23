@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout } from 'node:timers/promises';
+import getPort from 'get-port';
 import { pEvent } from 'p-event';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import WebSocket from 'ws';
 import {
     type AgentActionFrame,
@@ -29,41 +32,9 @@ import {
     WSApp,
     WSClient,
     WSServer,
-} from './index.js';
-import { setTimeout } from 'node:timers/promises';
+} from '../index.js';
 
-const jest = import.meta.jest;
-
-const jestCallback = <Y extends unknown[] = unknown[], T = unknown, C = void>(f?: (this: C, ...args: Y) => T) => {
-    let defered = Promise.withResolvers<[T, Y, C]>();
-    let resolved = false;
-    const fn = jest.fn(function (this: C, ...args: Y) {
-        const result = f ? f.apply(this, args) : undefined;
-        if (!resolved) {
-            defered.resolve([result as T, args, this]);
-            resolved = true;
-        }
-        return result;
-    });
-    const fnModified = fn as typeof fn & {
-        haveBeenCalledOnce: () => Promise<T>;
-        haveBeenCalledWith: () => Promise<Y[0]>;
-        haveBeenCalledWithArguments: () => Promise<Y>;
-        haveBeenCalledWithThis: () => Promise<C>;
-        clear: () => void;
-    };
-    fnModified.haveBeenCalledOnce = async () => (await defered.promise)[0];
-    fnModified.haveBeenCalledWith = async () => (await defered.promise)[1][0];
-    fnModified.haveBeenCalledWithArguments = async () => (await defered.promise)[1];
-    fnModified.haveBeenCalledWithThis = async () => (await defered.promise)[2];
-    fnModified.clear = () => {
-        defered = Promise.withResolvers<[T, Y, C]>();
-        resolved = false;
-    };
-    return fnModified;
-};
-
-const port = 19134;
+const port = await getPort({ port: 19134 });
 
 describe('basic server and client', () => {
     let server: WSServer;
@@ -71,11 +42,11 @@ describe('basic server and client', () => {
     let client: WSClient;
     beforeEach(async () => {
         server = new WSServer(port);
-        const callback = jestCallback<[ClientConnection]>();
+        const callback = vi.fn<(client: ClientConnection) => void>();
         server.once('client', callback);
         client = new WSClient(`ws://127.0.0.1:${port}`);
-        const clientConn = await callback.haveBeenCalledWith();
-        session = clientConn.session;
+        await vi.waitFor(() => expect(callback).toHaveBeenCalled());
+        session = callback.mock.calls[0][0].session;
         if (session.socket.readyState !== WebSocket.OPEN) {
             await pEvent(session.socket, 'open');
         }
@@ -95,21 +66,22 @@ describe('basic server and client', () => {
         const expectedCommand = '/say Hi, there!';
         const expectedResponse = { message: 'Yes! I am here!' };
 
-        const sendCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
+        const sendCallback = vi.fn((frame: CommandFrame) => {
             // #2 respond command
             if (frame.handleEncryptionHandshake()) {
                 return;
             }
             frame.respond(expectedResponse);
         });
-        const recvCallback = jestCallback<[CommandResponseFrame]>();
+        const recvCallback = vi.fn<(frame: CommandResponseFrame) => void>();
         client.on('command', sendCallback);
 
         // #1 send command request
         const requestId = session.sendCommand(expectedCommand, recvCallback);
 
         // #3 receive response
-        const response = await recvCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(recvCallback).toHaveBeenCalled());
+        const response = recvCallback.mock.calls[0][0];
         expect(response.body).toEqual(expectedResponse);
         expect(response.requestId).toBe(requestId);
 
@@ -125,11 +97,11 @@ describe('basic server and client', () => {
         const expectedResponse = { message: 'Yes! I am here!' };
         const requestId = randomUUID();
 
-        const sendCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
+        const sendCallback = vi.fn((frame: CommandFrame) => {
             // #2 respond command
             client.respondCommand(frame.requestId, expectedResponse);
         });
-        const recvCallback = jestCallback<[CommandResponseFrame]>();
+        const recvCallback = vi.fn<(frame: CommandResponseFrame) => void>();
         client.on('command', sendCallback);
         session.on('commandResponse', recvCallback);
 
@@ -137,7 +109,8 @@ describe('basic server and client', () => {
         session.sendCommandRaw(requestId, expectedCommand);
 
         // #3 receive response
-        const response = await recvCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(recvCallback).toHaveBeenCalled());
+        const response = recvCallback.mock.calls[0][0];
         expect(response.body).toEqual(expectedResponse);
         expect(response.requestId).toBe(requestId);
 
@@ -155,18 +128,19 @@ describe('basic server and client', () => {
         const expectedInput = { text: 'Hi there!' };
         const expectedResponse = { message: 'Yes! I am here!' };
 
-        const sendCallback = jest.fn<undefined, [LegacyCommandFrame]>((frame) => {
+        const sendCallback = vi.fn((frame: LegacyCommandFrame) => {
             // #2 respond command
             frame.respond(expectedResponse);
         });
-        const recvCallback = jestCallback<[CommandResponseFrame]>();
+        const recvCallback = vi.fn<(frame: CommandResponseFrame) => void>();
         client.on('commandLegacy', sendCallback);
 
         // #1 send command request
         const requestId = session.sendCommandLegacy(expectedCommand, expectedOverload, expectedInput, recvCallback);
 
         // #3 receive response
-        const response = await recvCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(recvCallback).toHaveBeenCalled());
+        const response = recvCallback.mock.calls[0][0];
         expect(response.body).toEqual(expectedResponse);
         expect(response.requestId).toBe(requestId);
 
@@ -189,11 +163,11 @@ describe('basic server and client', () => {
         const expectedResponse = { message: 'Yes! I am here!' };
         const requestId = randomUUID();
 
-        const sendCallback = jest.fn<undefined, [LegacyCommandFrame]>((frame) => {
+        const sendCallback = vi.fn((frame: LegacyCommandFrame) => {
             // #2 respond command
             client.respondCommand(frame.requestId, expectedResponse);
         });
-        const recvCallback = jestCallback<[CommandResponseFrame]>();
+        const recvCallback = vi.fn<(frame: CommandResponseFrame) => void>();
         client.on('commandLegacy', sendCallback);
         session.on('commandResponse', recvCallback);
 
@@ -201,7 +175,8 @@ describe('basic server and client', () => {
         session.sendCommandLegacyRaw(requestId, expectedCommand, expectedOverload, expectedInput);
 
         // #3 receive response
-        const response = await recvCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(recvCallback).toHaveBeenCalled());
+        const response = recvCallback.mock.calls[0][0];
         expect(response.body).toEqual(expectedResponse);
         expect(response.requestId).toBe(requestId);
 
@@ -221,43 +196,48 @@ describe('basic server and client', () => {
         const expectedSecondEventBody = { secondEvent: 'hi' };
         const expectedThirdEventBody = { thirdEvent: true };
 
-        const subscribeCallback = jestCallback<[SubscribeFrame]>();
-        const unsubscribeCallback = jestCallback<[UnsubscribeFrame]>();
-        const eventListener = jestCallback<[EventFrame]>();
-        const eventFilteredListener = jestCallback<[EventFrame]>();
+        const subscribeCallback = vi.fn<(frame: SubscribeFrame) => void>();
+        const unsubscribeCallback = vi.fn<(frame: UnsubscribeFrame) => void>();
+        const eventListener = vi.fn<(frame: EventFrame) => void>();
+        const eventFilteredListener = vi.fn<(frame: EventFrame) => void>();
         client.on('subscribe', subscribeCallback);
         client.on('unsubscribe', unsubscribeCallback);
         session.on('event', eventListener);
 
         // #1 send event before subscribed
         client.sendEvent(eventName, expectedFirstEventBody);
-        const firstEvent = await eventListener.haveBeenCalledWith();
+        await vi.waitFor(() => expect(eventListener).toHaveBeenCalled());
+        const firstEvent = eventListener.mock.calls[0][0];
         expect(firstEvent.body).toMatchObject(expectedFirstEventBody);
         expect(eventListener).toHaveBeenCalledTimes(1);
 
         // #2 subscribe event
         session.subscribe(eventName, eventFilteredListener);
-        const subscribeFrame = await subscribeCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(subscribeCallback).toHaveBeenCalled());
+        const subscribeFrame = subscribeCallback.mock.calls[0][0];
         expect(subscribeFrame.body).toEqual({ eventName });
 
         // #3 send event after subscribed
         client.sendEvent(eventName, expectedSecondEventBody);
-        const secondEvent = await eventFilteredListener.haveBeenCalledWith();
+        await vi.waitFor(() => expect(eventFilteredListener).toHaveBeenCalled());
+        const secondEvent = eventFilteredListener.mock.calls[0][0];
         expect(secondEvent.body).toMatchObject(expectedSecondEventBody);
         expect(eventListener).toHaveBeenCalledTimes(1);
         expect(eventFilteredListener).toHaveBeenCalledTimes(1);
 
         // #4 unsubscribe event
         session.unsubscribe(eventName, eventFilteredListener);
-        const unsubscribeFrame = await unsubscribeCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(unsubscribeCallback).toHaveBeenCalled());
+        const unsubscribeFrame = unsubscribeCallback.mock.calls[0][0];
         expect(unsubscribeFrame.body).toEqual({ eventName });
 
         // #5 send event after unsubscribed
-        eventListener.clear();
+        eventListener.mockClear();
         client.sendEvent(eventName, expectedThirdEventBody);
-        const thirdEvent = await eventListener.haveBeenCalledWith();
+        await vi.waitFor(() => expect(eventListener).toHaveBeenCalled());
+        const thirdEvent = eventListener.mock.calls[0][0];
         expect(thirdEvent.body).toMatchObject(expectedThirdEventBody);
-        expect(eventListener).toHaveBeenCalledTimes(2);
+        expect(eventListener).toHaveBeenCalledTimes(1);
         expect(eventFilteredListener).toHaveBeenCalledTimes(1);
 
         client.off('subscribe', subscribeCallback);
@@ -271,7 +251,7 @@ describe('basic server and client', () => {
         const expectedSecondEventBody = { secondEvent: 'hi' };
         const expectedThirdEventBody = { thirdEvent: true };
 
-        const eventListener = jestCallback<[EventFrame]>();
+        const eventListener = vi.fn<(frame: EventFrame) => void>();
         session.on('event', eventListener);
 
         // #1 publish event before subscribed
@@ -284,7 +264,8 @@ describe('basic server and client', () => {
         session.subscribeRaw(eventName);
         await setTimeout(100);
         client.publishEvent(eventName, expectedSecondEventBody);
-        const secondEvent = await eventListener.haveBeenCalledWith();
+        await vi.waitFor(() => expect(eventListener).toHaveBeenCalled());
+        const secondEvent = eventListener.mock.calls[0][0];
         expect(secondEvent.body).toMatchObject(expectedSecondEventBody);
         expect(eventListener).toHaveBeenCalledTimes(1);
 
@@ -303,14 +284,15 @@ describe('basic server and client', () => {
         const errorMessage = 'This is a test error message';
         const requestId = randomUUID();
 
-        const errorListener = jestCallback<[ClientError]>();
+        const errorListener = vi.fn<(error: ClientError) => void>();
         session.on('clientError', errorListener);
 
         // #1 send error
         client.sendError(errorCode, errorMessage, requestId);
 
         // #2 received error
-        const error = await errorListener.haveBeenCalledWith();
+        await vi.waitFor(() => expect(errorListener).toHaveBeenCalled());
+        const error = errorListener.mock.calls[0][0];
         expect(error.statusCode).toBe(errorCode);
         expect(error.statusMessage).toBe(errorMessage);
         expect(error.requestId).toBe(requestId);
@@ -327,15 +309,16 @@ describe('basic server and client', () => {
         const chatType = ChatEventFrameType.Say;
         const chatMessage = 'Nice to meet you';
 
-        const chatSubscribeCallback = jestCallback<[ChatSubscribeFrame]>();
-        const chatUnsubscribeCallback = jestCallback<[ChatUnsubscribeFrame]>();
-        const chatCallback = jestCallback<[ChatEventFrame]>();
+        const chatSubscribeCallback = vi.fn<(frame: ChatSubscribeFrame) => void>();
+        const chatUnsubscribeCallback = vi.fn<(frame: ChatUnsubscribeFrame) => void>();
+        const chatCallback = vi.fn<(frame: ChatEventFrame) => void>();
         client.on('chatSubscribe', chatSubscribeCallback);
         client.on('chatUnsubscribe', chatUnsubscribeCallback);
 
         // #1 subscribe chat
         const requestId = session.subscribeChat(steve, alex, chatMessageFilter, chatCallback);
-        const chatSubscription = await chatSubscribeCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(chatSubscribeCallback).toHaveBeenCalled());
+        const chatSubscription = chatSubscribeCallback.mock.calls[0][0];
         expect(chatSubscription.sender).toBe(steve);
         expect(chatSubscription.receiver).toBe(alex);
         expect(chatSubscription.chatMessage).toBe(chatMessageFilter);
@@ -343,7 +326,8 @@ describe('basic server and client', () => {
 
         // #2 send chat event
         client.sendChat(requestId, chatType, alex, steve, chatMessage);
-        const chatEvent = await chatCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(chatCallback).toHaveBeenCalled());
+        const chatEvent = chatCallback.mock.calls[0][0];
         expect(chatEvent.sender).toBe(alex);
         expect(chatEvent.receiver).toBe(steve);
         expect(chatEvent.chatMessage).toBe(chatMessage);
@@ -351,13 +335,15 @@ describe('basic server and client', () => {
 
         // #3 unsubscribe chat
         session.unsubscribeChat(requestId);
-        const chatUnsubscription = await chatUnsubscribeCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(chatUnsubscribeCallback).toHaveBeenCalled());
+        const chatUnsubscription = chatUnsubscribeCallback.mock.calls[0][0];
         expect(chatUnsubscription.subscribeRequestId).toBe(requestId);
 
         // #4 unsubscribe chat all
-        chatUnsubscribeCallback.clear();
+        chatUnsubscribeCallback.mockClear();
         session.unsubscribeChatAll();
-        const chatUnsubscriptionAll = await chatUnsubscribeCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(chatUnsubscribeCallback).toHaveBeenCalled());
+        const chatUnsubscriptionAll = chatUnsubscribeCallback.mock.calls[0][0];
         expect(chatUnsubscriptionAll.subscribeRequestId).toBeUndefined();
 
         client.off('chatSubscribe', chatSubscribeCallback);
@@ -370,19 +356,20 @@ describe('basic server and client', () => {
         const expectedAction = MinecraftAgentActionType.Inspect;
         const expectedActionName = 'inspect';
 
-        const sendCallback = jest.fn<undefined, [AgentActionFrame]>((frame) => {
+        const sendCallback = vi.fn((frame: AgentActionFrame) => {
             // #2 respond command
             frame.respondCommand(expectedResponse);
             frame.respondAgentAction(expectedAction, expectedActionName, expectedAgentAction);
         });
-        const recvCallback = jestCallback<[AgentActionResponseFrame]>();
+        const recvCallback = vi.fn<(frame: AgentActionResponseFrame) => void>();
         client.on('agentAction', sendCallback);
 
         // #1 send command request
         const requestId = session.sendAgentCommand(expectedCommand, recvCallback);
 
         // #3 receive response
-        const response = await recvCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(recvCallback).toHaveBeenCalled());
+        const response = recvCallback.mock.calls[0][0];
         expect(response.body).toEqual(expectedAgentAction);
         expect(response.action).toBe(expectedAction);
         expect(response.actionName).toBe(expectedActionName);
@@ -402,18 +389,19 @@ describe('basic server and client', () => {
         const dataType = MinecraftDataType.Block;
         const dataResponse = [{ id: 'mcpews:test', aux: 0, name: 'mcpews test' }];
 
-        const sendCallback = jest.fn<undefined, [DataRequestFrame<typeof dataType>]>((frame) => {
+        const sendCallback = vi.fn((frame: DataRequestFrame<typeof dataType>) => {
             // #2 respond command
             frame.respond(dataResponse);
         });
-        const recvCallback = jestCallback<[DataFrame<typeof dataType, typeof dataResponse>]>();
+        const recvCallback = vi.fn<(frame: DataFrame<typeof dataType, typeof dataResponse>) => void>();
         client.setDataResponser(dataType, sendCallback);
 
         // #1 send data request
         const requestId = session.fetchData(dataType, recvCallback);
 
         // #3 receive response
-        const response = await recvCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(recvCallback).toHaveBeenCalled());
+        const response = recvCallback.mock.calls[0][0];
         expect(response.body).toEqual(dataResponse);
         expect(response.dataType).toBe(dataType);
         expect(response.requestId).toBe(requestId);
@@ -430,7 +418,7 @@ describe('basic server and client', () => {
         const expectedResponse = { message: 'Yes! It is encrypted!' };
 
         const handshakeResults = [] as boolean[];
-        const commandCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
+        const commandCallback = vi.fn((frame: CommandFrame) => {
             // #2 handle encryption handshake
             const handshakeResult = frame.handleEncryptionHandshake();
             handshakeResults.push(handshakeResult);
@@ -438,8 +426,8 @@ describe('basic server and client', () => {
                 frame.respond(expectedResponse);
             }
         });
-        const encryptCallback = jestCallback<[ServerSession]>();
-        const commandResponseCallback = jestCallback<[CommandResponseFrame]>();
+        const encryptCallback = vi.fn<(session: ServerSession) => void>();
+        const commandResponseCallback = vi.fn<(frame: CommandResponseFrame) => void>();
         client.on('command', commandCallback);
 
         // #1 send encryption handshake
@@ -447,7 +435,7 @@ describe('basic server and client', () => {
         expect(encryptableBefore).toBe(true);
 
         // #3 wait for handshake complete
-        await encryptCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(encryptCallback).toHaveBeenCalled());
         expect(session.encryption).toBeTruthy();
         expect(client.encryption).toBeTruthy();
 
@@ -461,7 +449,8 @@ describe('basic server and client', () => {
 
         // #5 transmit data
         session.sendCommand(expectedCommand, commandResponseCallback);
-        const commandResponse = await commandResponseCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(commandResponseCallback).toHaveBeenCalled());
+        const commandResponse = commandResponseCallback.mock.calls[0][0];
         expect(commandResponse.body).toEqual(expectedResponse);
         expect(session.encrypted).toBe(true);
         expect(client.encrypted).toBe(true);
@@ -479,7 +468,7 @@ describe('basic server and client', () => {
         const expectedResponse = { message: 'Yes! It is encrypted!' };
 
         const handshakeResults = [] as boolean[];
-        const commandCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
+        const commandCallback = vi.fn((frame: CommandFrame) => {
             // #2 handle encryption handshake
             const handshakeResult = frame.handleEncryptionHandshake();
             handshakeResults.push(handshakeResult);
@@ -487,9 +476,9 @@ describe('basic server and client', () => {
                 frame.respond(expectedResponse);
             }
         });
-        const encryptRequestCallback = jest.fn<undefined, [EncryptRequest]>();
-        const encryptCallback = jestCallback<[ServerSession]>();
-        const commandResponseCallback = jestCallback<[CommandResponseFrame]>();
+        const encryptRequestCallback = vi.fn<(request: EncryptRequest) => void>();
+        const encryptCallback = vi.fn<(session: ServerSession) => void>();
+        const commandResponseCallback = vi.fn<(frame: CommandResponseFrame) => void>();
         client.on('command', commandCallback);
         client.on('encryptRequest', encryptRequestCallback);
 
@@ -499,13 +488,14 @@ describe('basic server and client', () => {
         expect(encryptableBefore).toBe(true);
 
         // #2 wait for handshake complete
-        await encryptCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(encryptCallback).toHaveBeenCalled());
         expect(session.encryption).toBeTruthy();
         expect(client.encryption).toBeTruthy();
 
         // #3 transmit data
         session.sendCommand(expectedCommand, commandResponseCallback);
-        const commandResponse = await commandResponseCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(commandResponseCallback).toHaveBeenCalled());
+        const commandResponse = commandResponseCallback.mock.calls[0][0];
         expect(commandResponse.body).toEqual(expectedResponse);
         expect(session.encrypted).toBe(true);
         expect(client.encrypted).toBe(true);
@@ -527,7 +517,7 @@ describe('basic server and client', () => {
         const expectedResponse = { message: 'Yes! It is encrypted!' };
 
         const handshakeResults = [] as boolean[];
-        const commandCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
+        const commandCallback = vi.fn((frame: CommandFrame) => {
             // #2 handle encryption handshake
             const handshakeResult = frame.handleEncryptionHandshake();
             handshakeResults.push(handshakeResult);
@@ -535,8 +525,8 @@ describe('basic server and client', () => {
                 frame.respond(expectedResponse);
             }
         });
-        const encryptCallback = jestCallback<[ServerSession]>();
-        const commandResponseCallback = jestCallback<[CommandResponseFrame]>();
+        const encryptCallback = vi.fn<(session: ServerSession) => void>();
+        const commandResponseCallback = vi.fn<(frame: CommandResponseFrame) => void>();
         client.on('command', commandCallback);
 
         // #1 send encryption handshake
@@ -545,13 +535,14 @@ describe('basic server and client', () => {
         expect(encryptableBefore).toBe(true);
 
         // #2 wait for handshake complete
-        await encryptCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(encryptCallback).toHaveBeenCalled());
         expect(session.encryption).toBeTruthy();
         expect(client.encryption).toBeTruthy();
 
         // #3 transmit data
         session.sendCommand(expectedCommand, commandResponseCallback);
-        const commandResponse = await commandResponseCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(commandResponseCallback).toHaveBeenCalled());
+        const commandResponse = commandResponseCallback.mock.calls[0][0];
         expect(commandResponse.body).toEqual(expectedResponse);
         expect(session.encrypted).toBe(true);
         expect(client.encrypted).toBe(true);
@@ -570,10 +561,11 @@ describe('app server and client', () => {
     let client: WSClient;
     beforeEach(async () => {
         app = new WSApp(port);
-        const callback = jestCallback<[AppSessionConnection]>();
+        const callback = vi.fn<(connection: AppSessionConnection) => void>();
         app.once('session', callback);
         client = new WSClient(`ws://127.0.0.1:${port}`);
-        const clientConn = await callback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(callback).toHaveBeenCalled());
+        const clientConn = callback.mock.calls[0][0];
         session = clientConn.session;
         if (session.session.socket.readyState !== WebSocket.OPEN) {
             await pEvent(session.session.socket, 'open');
@@ -583,8 +575,8 @@ describe('app server and client', () => {
         }
     });
     afterEach(async () => {
-        await (session as AppSession | undefined)?.disconnect(true);
-        (client as WSClient | undefined)?.disconnect();
+        await session?.disconnect(true);
+        client?.disconnect();
         app.close();
     });
 
@@ -592,7 +584,7 @@ describe('app server and client', () => {
         const expectedCommand = '/say Hi, there!';
         const expectedResponse = { message: 'Yes! I am here!' };
 
-        const sendCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
+        const sendCallback = vi.fn((frame: CommandFrame) => {
             frame.respond(expectedResponse);
         });
         client.on('command', sendCallback);
@@ -610,7 +602,7 @@ describe('app server and client', () => {
         const expectedCommand = '/say Hi, there!';
         const expectedError = { statusCode: 2147483648, statusMessage: 'Who are you?' };
 
-        const sendCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
+        const sendCallback = vi.fn((frame: CommandFrame) => {
             frame.respond(expectedError);
         });
         client.on('command', sendCallback);
@@ -634,7 +626,7 @@ describe('app server and client', () => {
         const expectedInput = { text: 'Hi there!' };
         const expectedResponse = { message: 'Yes! I am here!' };
 
-        const sendCallback = jest.fn<undefined, [LegacyCommandFrame]>((frame) => {
+        const sendCallback = vi.fn((frame: LegacyCommandFrame) => {
             frame.respond(expectedResponse);
         });
         client.on('commandLegacy', sendCallback);
@@ -654,25 +646,28 @@ describe('app server and client', () => {
         const eventName = 'TestEventName';
         const expectedEventBody = { data: ['something'] };
 
-        const subscribeCallback = jestCallback<[SubscribeFrame]>();
-        const unsubscribeCallback = jestCallback<[UnsubscribeFrame]>();
-        const eventListener = jestCallback<[EventFrame]>();
+        const subscribeCallback = vi.fn<(frame: SubscribeFrame) => void>();
+        const unsubscribeCallback = vi.fn<(frame: UnsubscribeFrame) => void>();
+        const eventListener = vi.fn<(frame: EventFrame) => void>();
         client.on('subscribe', subscribeCallback);
         client.on('unsubscribe', unsubscribeCallback);
 
         // #1 subscribe event
         session.on(eventName, eventListener);
-        const subscribeFrame = await subscribeCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(subscribeCallback).toHaveBeenCalled());
+        const subscribeFrame = subscribeCallback.mock.calls[0][0];
         expect(subscribeFrame.body).toEqual({ eventName });
 
         // #2 send event after subscribed
         client.sendEvent(eventName, expectedEventBody);
-        const event = await eventListener.haveBeenCalledWith();
+        await vi.waitFor(() => expect(eventListener).toHaveBeenCalled());
+        const event = eventListener.mock.calls[0][0];
         expect(event.body).toMatchObject(expectedEventBody);
 
         // #3 unsubscribe event
         session.off(eventName, eventListener);
-        const unsubscribeFrame = await unsubscribeCallback.haveBeenCalledWith();
+        await vi.waitFor(() => expect(unsubscribeCallback).toHaveBeenCalled());
+        const unsubscribeFrame = unsubscribeCallback.mock.calls[0][0];
         expect(unsubscribeFrame.body).toEqual({ eventName });
         expect(eventListener).toHaveBeenCalledTimes(1);
 
@@ -696,7 +691,7 @@ describe('app server and client', () => {
         const eventName = 'TestEventName';
         const expectedEventBody = { data: 'once' };
 
-        const eventListener = jestCallback<[EventFrame]>();
+        const eventListener = vi.fn<(frame: EventFrame) => void>();
         session.once(eventName, eventListener);
         await setTimeout(100); // wait for subscription
         client.publishEvent(eventName, expectedEventBody);
@@ -715,7 +710,7 @@ describe('app server and client', () => {
         const expectedCommand = '/say Hi, there!';
         const expectedResponse = { message: 'Yes! I am here!' };
 
-        const sendCallback = jest.fn<undefined, [CommandFrame]>((frame) => {
+        const sendCallback = vi.fn((frame: CommandFrame) => {
             if (!frame.handleEncryptionHandshake()) {
                 frame.respond(expectedResponse);
             }
